@@ -1,0 +1,212 @@
+The answer to this question is uncertain, but there are two likely possibilities. First,
+the network initialization may encourage smoothness, and the model never departs from
+the sub-domain of smooth function during the training process. Second, the training
+algorithm may somehow “prefer” to converge to smooth functions. Any factor that
+biases a solution toward a subset of equivalent solutions is known as a regularizer, so one
+possibility is that the training algorithm acts as an implicit regularizer (see section 9.2).
+8.5
+Choosing hyperparameters
+In the previous section, we discussed how test performance changes with model capac-
+ity. Unfortunately, in the classical regime, we don’t have access to either the bias (which
+requires knowledge of the true underlying function) or the variance (which requires mul-
+tiple independently sampled datasets to estimate). In the modern regime, there is no
+way to tell how much capacity should be added before the test error stops improving.
+This raises the question of exactly how we should choose model capacity in practice.
+For a deep network, the model capacity depends on the numbers of hidden layers
+and hidden units per layer as well as other aspects of architecture that we have yet to
+introduce. Furthermore, the choice of learning algorithm and any associated parameters
+(learning rate, etc.) also affects the test performance. These elements are collectively
+termed hyperparameters. The process of finding the best hyperparameters is termed
+hyperparameter search or (when focused on network structure) neural architecture search.
+This work is subject to a Creative Commons CC-BY-NC-ND license. (C) MIT Press.8.6 Summary
+133
+Hyperparameters are typically chosen empirically; we train many models with differ-
+ent hyperparameters on the same training set, measure their performance, and retain the
+best model. However, we do not measure their performance on the test set; this would
+admit the possibility that these hyperparameters just happen to work well for the test
+set but don’t generalize to further data. Instead, we introduce a third dataset known
+as a validation set. For every choice of hyperparameters, we train the associated model
+using the training set and evaluate performance on the validation set. Finally, we select
+the model that worked best on the validation set and measure its performance on the
+test set. In principle, this should give a reasonable estimate of the true performance.
+The hyperparameter space is generally smaller than the parameter space but still
+too large to try every combination exhaustively. Unfortunately, many hyperparameters
+are discrete (e.g., the number of hidden layers), and others may be conditional on one
+another (e.g., we only need to specify the number of hidden units in the tenth hidden
+layer if there are ten or more layers). Hence, we cannot rely on gradient descent methods
+as we did for learning the model parameters. Hyperparameter optimization algorithms
+intelligently sample the space of hyperparameters, contingent on previous results. This
+procedure is computationally expensive since we must train an entire model and measure
+the validation performance for each combination of hyperparameters.
+8.6 Summary
+To measure performance, we use a separate test set. The degree to which performance is
+maintained on this test set is known as generalization. Test errors can be explained by
+three factors: noise, bias, and variance. These combine additively in regression problems
+with least squares losses. Adding training data decreases the variance. When the model
+capacity is less than the number of training examples, increasing the capacity decreases
+bias but increases variance. This is known as the bias-variance trade-off, and there is a
+capacity where the trade-off is optimal.
+However, this is balanced against a tendency for performance to improve with ca-
+pacity, even when the parameters exceed the training examples. Together, these two
+phenomena create the double descent curve. It is thought that the model interpolates
+more smoothly between the training data points in the over-parameterized “modern
+regime,” although it is unclear what drives this. To choose the capacity and other model
+and training algorithm hyperparameters, we fit multiple models and evaluate their per-
+formance using a separate validation set.
+Notes
+Bias-variance trade-off: We showed that the test error for regression problems with least
+squares loss decomposes into the sum of noise, bias, and variance terms. These factors are
+all present for models with other losses, but their interaction is typically more complicated
+(Friedman, 1997; Domingos, 2000). For classification problems, there are some counter-intuitive
+Draft: please send errata to udlbookmail@gmail.com.134
+8 Measuring performance
+predictions; for example, if the model is biased toward selecting the wrong class in a region of
+the input space, then increasing the variance can improve the classification rate as this pushes
+some of the predictions over the threshold to be classified correctly.
+Cross-validation: We saw that it is typical to divide the data into three parts: training
+data (which is used to learn the model parameters), validation data (which is used to choose
+the hyperparameters), and test data (which is used to estimate the final performance). This
+approach is known as cross-validation. However, this division may cause problems where the
+total number of data examples is limited; if the number of training examples is comparable to
+the model capacity, then the variance will be large.
+One way to mitigate this problem is to use k-fold cross-validation. The training and validation
+data are partitioned into K disjoint subsets. For example, we might divide these data into
+five parts. We train with four and validate with the fifth for each of the five permutations
+and choose the hyperparameters based on the average validation performance. The final test
+performance is assessed using the average of the predictions from the five models with the best
+hyperparameters on an entirely different test set. There are many variations of this idea, but
+all share the general goal of using a larger proportion of the data to train the model, thereby
+reducing variance.
+Capacity: We have used the term capacity informally to mean the number of parameters or
+hidden units in the model (and hence indirectly, the ability of the model to fit functions of
+increasing complexity). The representational capacity of a model describes the space of possible
+functions it can construct when we consider all possible parameter values. When we take into
+account the fact that an optimization algorithm may not be able to reach all of these solutions,
+what is left is the effective capacity.
+The Vapnik-Chervonenkis (VC) dimension (Vapnik & Chervonenkis, 1971) is a more formal
+measure of capacity. It is the largest number of training examples that a binary classifier can
+label arbitrarily. Bartlett et al. (2019) derive upper and lower bounds for the VC dimension in
+terms of the number of layers and weights. An alternative measure of capacity is the Rademacher
+complexity, which is the expected empirical performance of a classification model (with optimal
+parameters) for data with random labels. Neyshabur et al. (2017) derive a lower bound on the
+generalization error in terms of the Rademacher complexity.
+Double descent: The term “double descent” was coined by Belkin et al. (2019), who demon-
+strated that the test error decreases again in the over-parameterized regime for two-layer neural
+networks and random features. They also claimed that this occurs in decision trees, although
+Buschjäger & Morik (2021) subsequently provided evidence to the contrary. Nakkiran et al.
+(2021) show that double descent occurs for various modern datasets (CIFAR-10, CIFAR-100,
+IWSLT’14 de-en), architectures (CNNs, ResNets, transformers), and optimizers (SGD, Adam).
+The phenomenon is more pronounced when noise is added to the target labels (Nakkiran et al.,
+2021) and when some regularization techniques are used (Ishida et al., 2020).
+Nakkiran et al. (2021) also provide empirical evidence that test performance depends on effective
+model capacity (the largest number of samples for which a given model and training method can
+achieve zero training error). At this point, the model starts to devote its efforts to interpolating
+smoothly. As such, the test performance depends not just on the model but also on the training
+algorithm and length of training. They observe the same pattern when they study a model with
+fixed capacity and increase the number of training iterations. They term this epoch-wise double
+descent. This phenomenon has been modeled by Pezeshki et al. (2022) in terms of different
+features in the model being learned at different speeds.
+Double descent makes the rather strange prediction that adding training data can sometimes
+worsen test performance. Consider an over-parameterized model in the second descending part
+This work is subject to a Creative Commons CC-BY-NC-ND license. (C) MIT Press.Notes
+135
+of the curve. If we increase the training data to match the model capacity, we will now be in
+the critical region of the new test error curve, and the test loss may increase.
+Bubeck & Sellke (2021) prove that overparameterization is necessary to interpolate data smoothly
+in high dimensions. They demonstrate a trade-off between the number of parameters and the
+Lipschitz constant of a model (the fastest the output can change for a small input change). A
+review of the theory of over-parameterized machine learning can be found in Dar et al. (2021).
+Appendix B.1.1
+Lipschitz constant
+Curse of dimensionality: As dimensionality increases, the volume of space grows so fast that
+the amount of data needed to densely sample it increases exponentially. This phenomenon is
+known as the curse of dimensionality. High-dimensional space has many unexpected properties,
+and caution should be used when trying to reason about it based on low-dimensional exam-
+ples. This book visualizes many aspects of deep learning in one or two dimensions, but these
+visualizations should be treated with healthy skepticism.
+Surprising properties of high-dimensional spaces include: (i) Two randomly sampled data points
+from a standard normal distribution are very close to orthogonal to one another (relative to
+the origin) with high likelihood. (ii) The distance from the origin of samples from a standard
+normal distribution is roughly constant. (iii) Most of a volume of a high-dimensional sphere
+(hypersphere) is adjacent to its surface (a common metaphor is that most of the volume of a high-
+dimensional orange is in the peel, not in the pulp). (iv) If we place a unit-diameter hypersphere
+inside a hypercube with unit-length sides, then the hypersphere takes up a decreasing proportion
+of the volume of the cube as the dimension increases. Since the volume of the cube is fixed at
+size one, this implies that the volume of a high-dimensional hypersphere becomes close to zero.
+(v) For random points drawn from a uniform distribution in a high-dimensional hypercube, the
+ratio of the Euclidean distance between the nearest and furthest points becomes close to one.
+For further information, consult Beyer et al. (1999) and Aggarwal et al. (2001).
+Real-world performance: In this chapter, we argued that model performance could be evalu-
+ated using a held-out test set. However, the result won’t be indicative of real-world performance
+if the statistics of the test set don’t match those of real-world data. Moreover, the statistics
+of real-world data may change over time, causing the model to become increasingly stale and
+performance to decrease. This is known as data drift and means that deployed models must be
+carefully monitored.
+There are three main reasons why real-world performance may be worse than the test perfor-
+mance implies. First, the statistics of the input data x may change; we may now be observing
+parts of the function that were sparsely sampled or not sampled at all during training. This
+is known as covariate shift. Second, the statistics of the output data y may change; if some
+output values are infrequent during training, then the model may learn not to predict these in
+ambiguous situations and will make mistakes if they are more common in the real world. This
+is known as prior shift. Third, the relationship between input and output may change. This is
+known as concept shift. These issues are discussed in Moreno-Torres et al. (2012).
+Hyperparameter search: Finding the best hyperparameters is a challenging optimization
+task. Testing a single configuration of hyperparameters is expensive; we must train an entire
+model and measure its performance. We have no easy way to access the derivatives (i.e., how
+performance changes when we make a small change to a hyperparameter). Moreover, many of
+the hyperparameters are discrete, so we cannot use gradient descent methods. There are multiple
+local minima and no way to tell if we are close to the global minimum. The noise level is high
+since each training/validation cycle uses a stochastic training algorithm; we expect different
+results if we train a model twice with the same hyperparameters. Finally, some variables are
+conditional and only exist if others are set. For example, the number of hidden units in the
+third hidden layer is only relevant if we have at least three hidden layers.
+Draft: please send errata to udlbookmail@gmail.com.
+Problems 8.6–8.9
+Notebook 8.4
+High-dimensional
+spaces8 Measuring performance
+136
+A simple approach is to sample the space randomly (Bergstra & Bengio, 2012). However,
+for continuous variables, it is better to build a model of performance as a function of the
+hyperparameters and the uncertainty in this function. This can be exploited to test where the
+uncertainty is great (explore the space) or home in on regions where performance looks promising
+(exploit previous knowledge). Bayesian optimization is a framework based on Gaussian processes
+that does just this, and its application to hyperparameter search is described in Snoek et al.
+(2012). The Beta-Bernoulli bandit (see Lattimore & Szepesvári, 2020) is a roughly equivalent
+model for describing uncertainty in results due to discrete variables.
+The sequential model-based configuration (SMAC) algorithm (Hutter et al., 2011) can cope with
+continuous, discrete, and conditional parameters. The basic approach is to use a random forest
+to model the objective function where the mean of the tree predictions is the best guess about
+the objective function, and their variance represents the uncertainty. A completely different
+approach that can also cope with combinations of continuous, discrete, and conditional param-
+eters is Tree-Parzen Estimators (Bergstra et al., 2011). The previous methods modeled the
+probability of the model performance given the hyperparameters. In contrast, the Tree-Parzen
+estimator models the probability of the hyperparameters given the model performance.
+Hyperband (Li et al., 2017b) is a multi-armed bandit strategy for hyperparameter optimization.
+It assumes that there are computationally cheap but approximate ways to measure performance
+(e.g., by not training to completion) and that these can be associated with a budget (e.g., by
+training for a fixed number of iterations). A number of random configurations are sampled and
+run until the budget is used up. Then the best fraction η of runs is kept, and the budget is
+multiplied by 1/η. This is repeated until the maximum budget is reached. This approach has
+the advantage of eﬀiciency; for bad configurations, it does not need to run the experiment to the
+end. However, each sample is just chosen randomly, which is ineﬀicient. The BOHB algorithm
+(Falkner et al., 2018) combines the eﬀiciency of Hyperband with the more sensible choice of
+hyperparameters from Tree Parzen estimators to construct an even better method.
+Problems
+Problem 8.1 Will the multiclass cross-entropy training loss in figure 8.2 ever reach zero? Explain
+your reasoning.
+Problem 8.2 What values should we choose for the three weights and biases in the first layer of
+the model in figure 8.4a so that the hidden unit’s responses are as depicted in figures 8.4b–d?
+Problem 8.3∗ Given a training dataset consisting of I input/output pairs {xi , yi }, show how
+the parameters {β, ω1 , ω2 , ω3 } for the model in figure 8.4a using the least squares loss function
+can be found in closed form.
+Problem 8.4 Consider the curve in figure 8.10b at the point where we train a model with a
+hidden layer of size 200, which would have 50,410 parameters. What do you predict will happen
+to the training and test performance if we increase the number of training examples from 10,000
+to 50,410?
+Problem 8.5 Consider the case where the model capacity exceeds the number of training data
+points, and the model is flexible enough to reduce the training loss to zero. What are the
+implications of this for fitting a heteroscedastic model? Propose a method to resolve any
+problems that you identify.
+Problem 8.6 Show that two random points drawn from a 1000-dimensional standard Gaussian
+distribution are orthogonal relative to the origin with high probability
