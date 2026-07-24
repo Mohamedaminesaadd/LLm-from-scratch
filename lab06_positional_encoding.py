@@ -1,23 +1,22 @@
 """
 =================================================
-Lab 05 - Embedding Layer
+Lab 06 - Positional Encoding
 =================================================
 
 Objective:
-1. Understand token embeddings.
-2. Create an nn.Embedding layer.
-3. Convert token IDs into dense vectors.
-4. Explore embedding dimensions.
+1. Understand why positional encoding is needed.
+2. Implement sinusoidal positional encoding.
+3. Add positional information to token embeddings.
+4. Visualize the resulting tensor shapes.
 """
 
 from pathlib import Path
 from collections import Counter
 import re
-
+import math
 import torch
-import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
-
+import torch.nn as nn
 
 # -------------------------------------------------
 # Configuration
@@ -36,7 +35,6 @@ SEQUENCE_LENGTH = 5
 BATCH_SIZE = 2
 EMBEDDING_DIM = 100
 
-
 # -------------------------------------------------
 # Load Dataset
 # -------------------------------------------------
@@ -52,12 +50,11 @@ def clean_text(text: str) -> str:
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
-
 # -------------------------------------------------
 # Build Vocabulary
 # -------------------------------------------------
 
-def build_vocabulary(text: str):
+def build_vocabulary(text):
 
     counter = Counter(text.split())
 
@@ -78,7 +75,6 @@ def build_vocabulary(text: str):
 
     return word_to_id, id_to_word
 
-
 # -------------------------------------------------
 # Encode Text
 # -------------------------------------------------
@@ -98,7 +94,6 @@ def encode(text, word_to_id):
         )
 
     return ids
-
 
 # -------------------------------------------------
 # Dataset
@@ -125,6 +120,43 @@ class TextDataset(Dataset):
     def __getitem__(self, index):
         return self.inputs[index], self.targets[index]
 
+# -------------------------------------------------
+# Positional Encoding
+# -------------------------------------------------
+
+class PositionalEncoding(nn.Module):
+
+    def __init__(self, embedding_dim, max_length=5000):
+        super().__init__()
+
+        pe = torch.zeros(max_length, embedding_dim)
+
+        position = torch.arange(
+            0,
+            max_length,
+            dtype=torch.float
+        ).unsqueeze(1)
+
+        div_term = torch.exp(
+            torch.arange(
+                0,
+                embedding_dim,
+                2,
+                dtype=torch.float
+            ) * (-math.log(10000.0) / embedding_dim)
+        )
+
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+
+        pe = pe.unsqueeze(0)
+
+        self.register_buffer("pe", pe)
+
+    def forward(self, x):
+        sequence_length = x.size(1)
+        x = x + self.pe[:, :sequence_length]
+        return x
 
 # -------------------------------------------------
 # Main
@@ -132,14 +164,14 @@ class TextDataset(Dataset):
 
 def main():
 
-    # Load text
+    # Load and clean text
     text = load_text(DATASET_PATH)
     text = clean_text(text)
 
-    # Vocabulary
+    # Build vocabulary
     word_to_id, id_to_word = build_vocabulary(text)
 
-    # Encode
+    # Encode text
     token_ids = encode(text, word_to_id)
 
     # Dataset
@@ -155,84 +187,60 @@ def main():
         shuffle=True
     )
 
-    # Embedding Layer
+    # Embedding layer
     embedding = nn.Embedding(
         num_embeddings=len(word_to_id),
         embedding_dim=EMBEDDING_DIM
     )
 
-    # -------------------------------------------------
-    # Information
-    # -------------------------------------------------
-
-    print("=" * 50)
-    print("Dataset Information")
-    print("=" * 50)
-
-    print("Vocabulary Size :", len(word_to_id))
-    print("Total Tokens    :", len(token_ids))
-    print("Training Samples:", len(dataset))
-
-    print()
-
-    print("=" * 50)
-    print("Embedding Matrix")
-    print("=" * 50)
-
-    print(embedding.weight.shape)
-
-    print()
-
-    # -------------------------------------------------
-    # One Batch
-    # -------------------------------------------------
+    # Positional Encoding
+    positional_encoding = PositionalEncoding(EMBEDDING_DIM)
 
     for inputs, targets in dataloader:
 
         print("=" * 50)
         print("Token IDs")
         print("=" * 50)
-
         print(inputs)
-
         print()
 
-        # Apply embedding
+        # Token Embeddings
         embedded_inputs = embedding(inputs)
         embedded_targets = embedding(targets)
 
-        print("=" * 50)
-        print("Embedded Inputs")
-        print("=" * 50)
+        # Add Positional Encoding
+        embedded_inputs = positional_encoding(embedded_inputs)
+        embedded_targets = positional_encoding(embedded_targets)
 
+        print("=" * 50)
+        print("Embedded Inputs + Positional Encoding")
+        print("=" * 50)
         print(embedded_inputs)
-
         print()
 
         print("=" * 50)
         print("Shapes")
         print("=" * 50)
-
-        print("Input IDs Shape       :", inputs.shape)
-        print("Embedded Input Shape  :", embedded_inputs.shape)
-        print("Target IDs Shape      :", targets.shape)
-        print("Embedded Target Shape :", embedded_targets.shape)
-
+        print("Input IDs Shape        :", inputs.shape)
+        print("Embedded Input Shape   :", embedded_inputs.shape)
+        print("Target IDs Shape       :", targets.shape)
+        print("Embedded Target Shape  :", embedded_targets.shape)
         print()
 
         print("=" * 50)
-        print("Word -> ID -> Embedding")
+        print("First Sentence")
         print("=" * 50)
 
         first_sentence = inputs[0]
 
         for token_id in first_sentence:
-
             idx = token_id.item()
             word = id_to_word[idx]
-            vector = embedding.weight[idx]
+            vector = embedded_inputs[0][
+                (first_sentence == token_id).nonzero(as_tuple=True)[0][0]
+            ]
 
-            print(f"{word:10} -> {idx:2d} -> {vector[:5]} ...")
+            print(f"{word:12} -> {idx:3d} -> {vector[:5]} ...")
 
         break
 

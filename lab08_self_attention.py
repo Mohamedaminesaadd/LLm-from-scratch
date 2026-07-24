@@ -1,15 +1,4 @@
-"""
-=================================================
-Lab 05 - Embedding Layer
-=================================================
-
-Objective:
-1. Understand token embeddings.
-2. Create an nn.Embedding layer.
-3. Convert token IDs into dense vectors.
-4. Explore embedding dimensions.
-"""
-
+import math
 from pathlib import Path
 from collections import Counter
 import re
@@ -57,7 +46,7 @@ def clean_text(text: str) -> str:
 # Build Vocabulary
 # -------------------------------------------------
 
-def build_vocabulary(text: str):
+def build_vocabulary(text):
 
     counter = Counter(text.split())
 
@@ -90,12 +79,7 @@ def encode(text, word_to_id):
     ids = []
 
     for token in tokens:
-        ids.append(
-            word_to_id.get(
-                token,
-                word_to_id["<UNK>"]
-            )
-        )
+        ids.append(word_to_id.get(token, word_to_id["<UNK>"]))
 
     return ids
 
@@ -127,12 +111,75 @@ class TextDataset(Dataset):
 
 
 # -------------------------------------------------
+# Positional Encoding
+# -------------------------------------------------
+
+class PositionalEncoding(nn.Module):
+
+    def __init__(self, embedding_dim, max_length=5000):
+        super().__init__()
+
+        pe = torch.zeros(max_length, embedding_dim)
+
+        position = torch.arange(0, max_length, dtype=torch.float).unsqueeze(1)
+
+        div_term = torch.exp(
+            torch.arange(0, embedding_dim, 2, dtype=torch.float)
+            * (-math.log(10000.0) / embedding_dim)
+        )
+
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+
+        pe = pe.unsqueeze(0)
+
+        self.register_buffer("pe", pe)
+
+    def forward(self, x):
+
+        seq_len = x.size(1)
+
+        return x + self.pe[:, :seq_len]
+
+
+# -------------------------------------------------
+# Self Attention
+# -------------------------------------------------
+
+class SelfAttention(nn.Module):
+
+    def __init__(self, embedding_dim):
+        super().__init__()
+
+        self.embedding_dim = embedding_dim
+
+        self.query = nn.Linear(embedding_dim, embedding_dim)
+        self.key = nn.Linear(embedding_dim, embedding_dim)
+        self.value = nn.Linear(embedding_dim, embedding_dim)
+
+    def forward(self, x):
+
+        Q = self.query(x)
+        K = self.key(x)
+        V = self.value(x)
+
+        scores = torch.matmul(Q, K.transpose(-2, -1))
+        scores = scores / math.sqrt(self.embedding_dim)
+
+        attention_weights = torch.softmax(scores, dim=-1)
+
+        output = torch.matmul(attention_weights, V)
+
+        return output, attention_weights
+
+
+# -------------------------------------------------
 # Main
 # -------------------------------------------------
 
 def main():
 
-    # Load text
+    # Load dataset
     text = load_text(DATASET_PATH)
     text = clean_text(text)
 
@@ -155,84 +202,73 @@ def main():
         shuffle=True
     )
 
-    # Embedding Layer
+    # Embedding
     embedding = nn.Embedding(
         num_embeddings=len(word_to_id),
         embedding_dim=EMBEDDING_DIM
     )
 
-    # -------------------------------------------------
-    # Information
-    # -------------------------------------------------
+    # Positional Encoding
+    positional_encoding = PositionalEncoding(EMBEDDING_DIM)
 
-    print("=" * 50)
-    print("Dataset Information")
-    print("=" * 50)
-
-    print("Vocabulary Size :", len(word_to_id))
-    print("Total Tokens    :", len(token_ids))
-    print("Training Samples:", len(dataset))
-
-    print()
-
-    print("=" * 50)
-    print("Embedding Matrix")
-    print("=" * 50)
-
-    print(embedding.weight.shape)
-
-    print()
-
-    # -------------------------------------------------
-    # One Batch
-    # -------------------------------------------------
+    # Self Attention
+    self_attention = SelfAttention(EMBEDDING_DIM)
 
     for inputs, targets in dataloader:
 
         print("=" * 50)
         print("Token IDs")
         print("=" * 50)
-
         print(inputs)
-
         print()
 
-        # Apply embedding
+        # Embeddings
         embedded_inputs = embedding(inputs)
         embedded_targets = embedding(targets)
 
-        print("=" * 50)
-        print("Embedded Inputs")
-        print("=" * 50)
+        # Positional Encoding
+        embedded_inputs = positional_encoding(embedded_inputs)
+        embedded_targets = positional_encoding(embedded_targets)
 
-        print(embedded_inputs)
+        # Self Attention
+        attention_output, attention_weights = self_attention(embedded_inputs)
 
+        print("=" * 50)
+        print("Input Shape")
+        print("=" * 50)
+        print(embedded_inputs.shape)
         print()
 
         print("=" * 50)
-        print("Shapes")
+        print("Attention Output Shape")
         print("=" * 50)
-
-        print("Input IDs Shape       :", inputs.shape)
-        print("Embedded Input Shape  :", embedded_inputs.shape)
-        print("Target IDs Shape      :", targets.shape)
-        print("Embedded Target Shape :", embedded_targets.shape)
-
+        print(attention_output.shape)
         print()
 
         print("=" * 50)
-        print("Word -> ID -> Embedding")
+        print("Attention Weights Shape")
         print("=" * 50)
+        print(attention_weights.shape)
+        print()
+
+        print("=" * 50)
+        print("Attention Weights")
+        print("=" * 50)
+        print(attention_weights)
+        print()
 
         first_sentence = inputs[0]
 
-        for token_id in first_sentence:
+        print("=" * 50)
+        print("Tokens and Embeddings")
+        print("=" * 50)
 
+        for i, token_id in enumerate(first_sentence):
             idx = token_id.item()
             word = id_to_word[idx]
-            vector = embedding.weight[idx]
+            vector = embedded_inputs[0][i]
 
-            print(f"{word:10} -> {idx:2d} -> {vector[:5]} ...")
+            print(f"{word:12} -> {idx:3d} -> {vector[:5]}")
 
         break
 
