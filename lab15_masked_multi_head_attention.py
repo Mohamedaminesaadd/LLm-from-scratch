@@ -3,6 +3,8 @@ import re
 from collections import Counter
 from pathlib import Path
 
+from lab06_positional_encoding import PositionalEncoding, TextDataset, build_vocabulary, clean_text, encode, load_text
+from lab13_encoder_block import AddNorm, FeedForward, MultiHeadSelfAttention
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
@@ -28,231 +30,6 @@ HEAD_NUMBER = 4
 FF_HIDDEN_DIM = 4 * EMBEDDING_DIM
 DROPOUT = 0.1
 
-
-# -------------------------------------------------
-# Load Dataset
-# -------------------------------------------------
-
-def load_text(path: Path) -> str:
-    with open(path, "r", encoding="utf-8") as file:
-        return file.read()
-
-
-def clean_text(text: str) -> str:
-    text = text.lower()
-    text = re.sub(r"[^a-z0-9\s]", "", text)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
-
-
-# -------------------------------------------------
-# Build Vocabulary
-# -------------------------------------------------
-
-def build_vocabulary(text):
-
-    counter = Counter(text.split())
-
-    word_to_id = {}
-    id_to_word = {}
-
-    idx = 0
-
-    for token in SPECIAL_TOKENS:
-        word_to_id[token] = idx
-        id_to_word[idx] = token
-        idx += 1
-
-    for word in sorted(counter.keys()):
-        word_to_id[word] = idx
-        id_to_word[idx] = word
-        idx += 1
-
-    return word_to_id, id_to_word
-
-
-# -------------------------------------------------
-# Encode Text
-# -------------------------------------------------
-
-def encode(text, word_to_id):
-
-    tokens = text.split()
-
-    ids = []
-
-    for token in tokens:
-        ids.append(word_to_id.get(token, word_to_id["<UNK>"]))
-
-    return ids
-
-
-# -------------------------------------------------
-# Dataset
-# -------------------------------------------------
-
-class TextDataset(Dataset):
-
-    def __init__(self, token_ids, sequence_length):
-
-        self.inputs = []
-        self.targets = []
-
-        for i in range(len(token_ids) - sequence_length):
-
-            x = token_ids[i:i + sequence_length]
-            y = token_ids[i + 1:i + sequence_length + 1]
-
-            self.inputs.append(torch.tensor(x, dtype=torch.long))
-            self.targets.append(torch.tensor(y, dtype=torch.long))
-
-    def __len__(self):
-        return len(self.inputs)
-
-    def __getitem__(self, index):
-        return self.inputs[index], self.targets[index]
-
-
-# -------------------------------------------------
-# Positional Encoding
-# -------------------------------------------------
-
-class PositionalEncoding(nn.Module):
-
-    def __init__(self, embedding_dim, max_length=5000):
-        super().__init__()
-
-        pe = torch.zeros(max_length, embedding_dim)
-
-        position = torch.arange(0, max_length, dtype=torch.float).unsqueeze(1)
-
-        div_term = torch.exp(
-            torch.arange(0, embedding_dim, 2, dtype=torch.float)
-            * (-math.log(10000.0) / embedding_dim)
-        )
-
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-
-        pe = pe.unsqueeze(0)
-
-        self.register_buffer("pe", pe)
-
-    def forward(self, x):
-
-        seq_len = x.size(1)
-
-        return x + self.pe[:, :seq_len]
-
-
-# -------------------------------------------------
-# Self Attention
-# -------------------------------------------------
-
-class MultiHeadSelfAttention(nn.Module):
-
-    def __init__(self, embedding_dim, head_number):
-        super().__init__()
-
-        assert embedding_dim % head_number == 0, \
-            "embedding_dim must be divisible by head_number"
-
-        self.embedding_dim = embedding_dim
-        self.head_number = head_number
-        self.head_dim = embedding_dim // head_number
-
-        self.query = nn.Linear(embedding_dim, embedding_dim)
-        self.key = nn.Linear(embedding_dim, embedding_dim)
-        self.value = nn.Linear(embedding_dim, embedding_dim)
-
-        self.out = nn.Linear(embedding_dim, embedding_dim)
-
-    def forward(self, x):
-        # x: (batch_size, seq_len, embedding_dim)
-
-        batch_size, seq_len, _ = x.size()
-
-        # Compute Q, K, V
-        Q = self.query(x)
-        K = self.key(x)
-        V = self.value(x)
-
-        # Split into heads
-        Q = Q.view(batch_size, seq_len, self.head_number, self.head_dim)
-        K = K.view(batch_size, seq_len, self.head_number, self.head_dim)
-        V = V.view(batch_size, seq_len, self.head_number, self.head_dim)
-
-        # Move head dimension before sequence
-        Q = Q.transpose(1, 2)
-        K = K.transpose(1, 2)
-        V = V.transpose(1, 2)
-
-        # Attention scores
-        scores = torch.matmul(Q, K.transpose(-2, -1))
-        scores = scores / math.sqrt(self.head_dim)
-
-        # Softmax
-        attention_weights = torch.softmax(scores, dim=-1)
-
-        # Attention output
-        attention = torch.matmul(attention_weights, V)
-
-        # Concatenate heads
-        attention = attention.transpose(1, 2).contiguous()
-        attention = attention.view(batch_size, seq_len, self.embedding_dim)
-
-        # Final linear layer
-        output = self.out(attention)
-
-        return output, attention_weights
-
-
-# -------------------------------------------------
-# Feed Forward Network (position-wise)
-# -------------------------------------------------
-
-class FeedForward(nn.Module):
-    """
-    Applied independently to each position:
-        Linear(d_model -> d_ff) -> ReLU -> Dropout -> Linear(d_ff -> d_model)
-    """
-
-    def __init__(self, embedding_dim, hidden_dim, dropout=0.1):
-        super().__init__()
-
-        self.linear_1 = nn.Linear(embedding_dim, hidden_dim)
-        self.activation = nn.ReLU()
-        self.dropout = nn.Dropout(dropout)
-        self.linear_2 = nn.Linear(hidden_dim, embedding_dim)
-
-    def forward(self, x):
-        # x: (batch_size, seq_len, embedding_dim)
-
-        x = self.linear_1(x)
-        x = self.activation(x)
-        x = self.dropout(x)
-        x = self.linear_2(x)
-
-        return x
-
-
-# -------------------------------------------------
-# Residual Connection + Layer Normalization
-# -------------------------------------------------
-
-class AddNorm(nn.Module):
-    """
-    Post-norm (original paper):  LayerNorm(x + Dropout(sublayer(x)))
-    """
-
-    def __init__(self, embedding_dim, dropout=0.1):
-        super().__init__()
-
-        self.norm = nn.LayerNorm(embedding_dim)
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x, sublayer_output):
-        return self.norm(x + self.dropout(sublayer_output))
 
 
 # -------------------------------------------------
@@ -334,111 +111,297 @@ class MaskedMultiHeadAttention(nn.Module):
         output = torch.matmul(attention_weights, V)
 
         return output, attention_weights
+
+
+#-----------------------------------------------
+# masked multi head self attention 
+#------------------------------------------------
+ 
+class MaskedMultiHeadSelfAttention(nn.Module):
+    """
+    Identique à MultiHeadSelfAttention, mais chaque position ne peut
+    regarder que les positions <= à elle (masque causal triangulaire).
+    """
+ 
+    def __init__(self, embedding_dim, head_number):
+        super().__init__()
+ 
+        assert embedding_dim % head_number == 0, \
+            "embedding_dim must be divisible by head_number"
+ 
+        self.embedding_dim = embedding_dim
+        self.head_number = head_number
+        self.head_dim = embedding_dim // head_number
+ 
+        self.query = nn.Linear(embedding_dim, embedding_dim)
+        self.key = nn.Linear(embedding_dim, embedding_dim)
+        self.value = nn.Linear(embedding_dim, embedding_dim)
+ 
+        self.out = nn.Linear(embedding_dim, embedding_dim)
+ 
+    @staticmethod
+    def build_causal_mask(seq_len, device):
+        # True = position interdite (futur)
+        return torch.triu(
+            torch.ones(seq_len, seq_len, dtype=torch.bool, device=device),
+            diagonal=1
+        )
+ 
+    def forward(self, x):
+        # x: (batch_size, seq_len, embedding_dim)
+ 
+        batch_size, seq_len, _ = x.size()
+ 
+        Q = self.query(x)
+        K = self.key(x)
+        V = self.value(x)
+ 
+        # Split into heads -> (batch, head, seq, head_dim)
+        Q = Q.view(batch_size, seq_len, self.head_number, self.head_dim).transpose(1, 2)
+        K = K.view(batch_size, seq_len, self.head_number, self.head_dim).transpose(1, 2)
+        V = V.view(batch_size, seq_len, self.head_number, self.head_dim).transpose(1, 2)
+ 
+        # Scaled dot-product
+        scores = torch.matmul(Q, K.transpose(-2, -1))
+        scores = scores / math.sqrt(self.head_dim)
+ 
+        # Masque causal (broadcast sur batch et têtes)
+        mask = self.build_causal_mask(seq_len, x.device)
+        scores = scores.masked_fill(mask, float("-inf"))
+ 
+        attention_weights = torch.softmax(scores, dim=-1)
+ 
+        attention = torch.matmul(attention_weights, V)
+ 
+        # Concatenate heads
+        attention = attention.transpose(1, 2).contiguous()
+        attention = attention.view(batch_size, seq_len, self.embedding_dim)
+ 
+        output = self.out(attention)
+ 
+        return output, attention_weights
+ 
 # -------------------------------------------------
 # Main
 # -------------------------------------------------
 
 def main():
 
+    print("=" * 60)
+    print("START PROGRAM")
+    print("=" * 60)
+
+    # -------------------------------------------------
+    # Check dataset
+    # -------------------------------------------------
+
+    print("Dataset path:", DATASET_PATH)
+    print("Exists:", DATASET_PATH.exists())
+    print()
+
+    if not DATASET_PATH.exists():
+        print("ERROR: Dataset file not found!")
+        return
+
+    # -------------------------------------------------
     # Load dataset
+    # -------------------------------------------------
+
     text = load_text(DATASET_PATH)
+
+    print("=" * 60)
+    print("RAW TEXT")
+    print("=" * 60)
+    print(text)
+    print()
+
     text = clean_text(text)
 
+    print("=" * 60)
+    print("CLEAN TEXT")
+    print("=" * 60)
+    print(text)
+    print()
+
+    if len(text) == 0:
+        print("ERROR: Dataset is empty.")
+        return
+
+    # -------------------------------------------------
     # Vocabulary
+    # -------------------------------------------------
+
     word_to_id, id_to_word = build_vocabulary(text)
 
+    print("=" * 60)
+    print("VOCABULARY SIZE")
+    print("=" * 60)
+    print(len(word_to_id))
+    print()
+
+    # -------------------------------------------------
     # Encode
+    # -------------------------------------------------
+
     token_ids = encode(text, word_to_id)
 
+    print("=" * 60)
+    print("TOKEN IDS")
+    print("=" * 60)
+    print(token_ids)
+    print()
+
+    print("Number of tokens:", len(token_ids))
+    print()
+
+    if len(token_ids) <= SEQUENCE_LENGTH:
+        print("ERROR")
+        print("The dataset is too small.")
+        print(f"Need at least {SEQUENCE_LENGTH + 1} tokens.")
+        return
+
+    # -------------------------------------------------
     # Dataset
+    # -------------------------------------------------
+
     dataset = TextDataset(
         token_ids,
         SEQUENCE_LENGTH
     )
 
+    print("=" * 60)
+    print("DATASET SIZE")
+    print("=" * 60)
+    print(len(dataset))
+    print()
+
+    if len(dataset) == 0:
+        print("ERROR: Dataset contains no samples.")
+        return
+
+    # -------------------------------------------------
     # DataLoader
+    # -------------------------------------------------
+
     dataloader = DataLoader(
         dataset,
         batch_size=BATCH_SIZE,
         shuffle=True
     )
 
-    # Embedding
+    # -------------------------------------------------
+    # Layers
+    # -------------------------------------------------
+
     embedding = nn.Embedding(
         num_embeddings=len(word_to_id),
         embedding_dim=EMBEDDING_DIM
     )
 
-    # Positional Encoding
-    positional_encoding = PositionalEncoding(EMBEDDING_DIM)
-
-    # Transformer Block (attention + AddNorm + FFN + AddNorm)
-    transformer_block = TransformerBlock(
-        embedding_dim=EMBEDDING_DIM,
-        head_number=HEAD_NUMBER,
-        hidden_dim=FF_HIDDEN_DIM,
-        dropout=DROPOUT
+    positional_encoding = PositionalEncoding(
+        EMBEDDING_DIM
     )
 
-    transformer_block.eval()  # deterministic: disables dropout
+    masked_attention = MaskedMultiHeadAttention(
+        EMBEDDING_DIM
+    )
 
-    for inputs, targets in dataloader:
+    masked_multi_head = MaskedMultiHeadSelfAttention(
+        EMBEDDING_DIM,
+        HEAD_NUMBER
+    )
 
-        print("=" * 50)
-        print("Token IDs")
-        print("=" * 50)
+    masked_attention.eval()
+    masked_multi_head.eval()
+
+    # -------------------------------------------------
+    # Forward
+    # -------------------------------------------------
+
+    for batch, (inputs, targets) in enumerate(dataloader):
+
+        print("=" * 60)
+        print(f"BATCH {batch}")
+        print("=" * 60)
+
+        print("Input IDs")
         print(inputs)
         print()
 
-        # Embeddings
-        embedded_inputs = embedding(inputs)
+        embeddings = embedding(inputs)
 
-        # Positional Encoding
-        embedded_inputs = positional_encoding(embedded_inputs)
-
-        # Transformer Block
-        block_output, attention_weights = transformer_block(embedded_inputs)
-
-        print("=" * 50)
-        print("Input Shape")
-        print("=" * 50)
-        print(embedded_inputs.shape)
+        print("Embedding Shape")
+        print(embeddings.shape)
         print()
 
-        print("=" * 50)
-        print("Block Output Shape")
-        print("=" * 50)
-        print(block_output.shape)
+        embeddings = positional_encoding(embeddings)
+
+        print("After Positional Encoding")
+        print(embeddings.shape)
         print()
 
-        print("=" * 50)
-        print("Attention Weights Shape")
-        print("=" * 50)
-        print(attention_weights.shape)
+        # -----------------------------
+        # Single Head
+        # -----------------------------
+
+        single_output, single_weights = masked_attention(
+            embeddings
+        )
+
+        print("=" * 60)
+        print("SINGLE HEAD MASKED ATTENTION")
+        print("=" * 60)
+
+        print("Output Shape:", single_output.shape)
+        print("Attention Shape:", single_weights.shape)
         print()
 
-        # Check LayerNorm : mean ~ 0 and std ~ 1 on the last dimension
-        print("=" * 50)
-        print("LayerNorm Check (last dim)")
-        print("=" * 50)
-        print("mean :", block_output.mean(dim=-1))
-        print("std  :", block_output.std(dim=-1))
+        print(single_weights[0])
         print()
+
+        # -----------------------------
+        # Multi Head
+        # -----------------------------
+
+        multi_output, multi_weights = masked_multi_head(
+            embeddings
+        )
+
+        print("=" * 60)
+        print("MASKED MULTI HEAD")
+        print("=" * 60)
+
+        print("Output Shape:", multi_output.shape)
+        print("Attention Shape:", multi_weights.shape)
+        print()
+
+        print("Head 0")
+        print(multi_weights[0, 0])
+        print()
+
+        # -----------------------------
+        # Tokens
+        # -----------------------------
+
+        print("=" * 60)
+        print("TOKEN REPRESENTATIONS")
+        print("=" * 60)
 
         first_sentence = inputs[0]
 
-        print("=" * 50)
-        print("Tokens and Block Output")
-        print("=" * 50)
+        for i, token in enumerate(first_sentence):
 
-        for i, token_id in enumerate(first_sentence):
-            idx = token_id.item()
-            word = id_to_word[idx]
-            vector = block_output[0][i]
+            idx = token.item()
 
-            print(f"{word:12} -> {idx:3d} -> {vector[:5]}")
+            print(
+                f"{id_to_word[idx]:12} -> {idx:3d} -> {multi_output[0, i, :5]}"
+            )
 
         break
+
+    print("=" * 60)
+    print("PROGRAM FINISHED")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
