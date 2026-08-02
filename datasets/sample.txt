@@ -1,6 +1,4 @@
-Here is a **~3,500-word** text dataset, structured as a long-form essay. It is designed for LLM training, featuring complex sentence structures, domain-specific terminology (urban ecology and systems thinking), and narrative flow. This text is original and formatted for clean tokenization.
 
----
 
 **Title: The Unseen Threads: How Urban Ecology Redefines the Human-Nature Nexus in the Anthropocene**
 

@@ -1,20 +1,37 @@
 import math
-import re
-from collections import Counter
 from pathlib import Path
 
-from lab06_positional_encoding import BATCH_SIZE, DATASET_PATH, EMBEDDING_DIM, SEQUENCE_LENGTH, PositionalEncoding, TextDataset, build_vocabulary, clean_text, encode, load_text
-from lab13_encoder_block import DROPOUT, FF_HIDDEN_DIM, HEAD_NUMBER, AddNorm, FeedForward, MultiHeadSelfAttention
-import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
+
+from lab06_positional_encoding import (
+    BATCH_SIZE,
+    DATASET_PATH,
+    EMBEDDING_DIM,
+    SEQUENCE_LENGTH,
+    PositionalEncoding,
+    TextDataset,
+    build_vocabulary,
+    clean_text,
+    encode,
+    load_text,
+)
+
+from lab13_encoder_block import (
+    DROPOUT,
+    FF_HIDDEN_DIM,
+    HEAD_NUMBER,
+    AddNorm,
+    FeedForward,
+    MultiHeadSelfAttention,
+)
 
 
 # -------------------------------------------------
 # Configuration
 # -------------------------------------------------
-NUM_LAYERS = 15
 
+NUM_LAYERS = 15
 
 
 # -------------------------------------------------
@@ -30,16 +47,16 @@ class EncoderBlock(nn.Module):
     def __init__(self, embedding_dim, head_number, hidden_dim, dropout=0.1):
         super().__init__()
 
-        self.attention = MultiHeadSelfAttention(embedding_dim, head_number, dropout)
+        self.attention = MultiHeadSelfAttention(embedding_dim, head_number)
         self.add_norm_1 = AddNorm(embedding_dim, dropout)
 
         self.feed_forward = FeedForward(embedding_dim, hidden_dim, dropout)
         self.add_norm_2 = AddNorm(embedding_dim, dropout)
 
-    def forward(self, x, mask=None):
+    def forward(self, x):
 
         # Sub-layer 1 : self-attention + residual + norm
-        attention_output, attention_weights = self.attention(x, mask)
+        attention_output, attention_weights = self.attention(x)
         x = self.add_norm_1(x, attention_output)
 
         # Sub-layer 2 : feed forward + residual + norm
@@ -87,7 +104,7 @@ class TransformerEncoder(nn.Module):
         # Final normalization (common in modern implementations)
         self.final_norm = nn.LayerNorm(embedding_dim)
 
-    def forward(self, token_ids, mask=None):
+    def forward(self, token_ids):
         # token_ids: (batch_size, seq_len)
 
         # Scale embeddings by sqrt(d_model), as in the original paper
@@ -98,7 +115,7 @@ class TransformerEncoder(nn.Module):
         attention_maps = []
 
         for layer in self.layers:
-            x, attention_weights = layer(x, mask)
+            x, attention_weights = layer(x)
             attention_maps.append(attention_weights)
 
         x = self.final_norm(x)
@@ -127,7 +144,7 @@ def main():
     dataset = TextDataset(token_ids, SEQUENCE_LENGTH)
     dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-    # Full encoder = stack of 12 encoder blocks
+    # Full encoder = stack of NUM_LAYERS encoder blocks
     encoder = TransformerEncoder(
         vocab_size=vocab_size,
         embedding_dim=EMBEDDING_DIM,
@@ -160,7 +177,7 @@ def main():
         print(inputs)
         print()
 
-        # Forward through the full 12-layer encoder
+        # Forward through the full encoder stack
         encoder_output, attention_maps = encoder(inputs)
 
         print("=" * 50)
