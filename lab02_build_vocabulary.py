@@ -63,9 +63,8 @@ def tokenize(text:str) -> list[str]:
 #count the word 
 #--------------------------------------------
 
-def count_word(text:str) -> Counter:
-    return Counter(text)
-
+def count_word(tokens: list[str]) -> Counter:
+    return Counter(tokens)
 
 #---------------------------------------------------
 #bluid vocabulary 

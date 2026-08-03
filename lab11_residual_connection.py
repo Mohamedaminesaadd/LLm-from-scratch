@@ -19,8 +19,8 @@ import torch.nn as nn
 
 BATCH_SIZE = 2
 SEQUENCE_LENGTH = 5
-EMBEDDING_DIM = 16
-HIDDEN_DIM = 64
+EMBEDDING_DIM = 100
+HIDDEN_DIM =   1024  # Typically 4 times the embedding dimension
 
 
 # -------------------------------------------------
@@ -71,52 +71,56 @@ class ResidualConnection(nn.Module):
 
         return x + self.sublayer(x)
 
+def main():
 
-# -------------------------------------------------
-# Create Model
-# -------------------------------------------------
+    # -------------------------------------------------
+    # Create Model
+    # -------------------------------------------------
 
-feed_forward = FeedForward(
-    EMBEDDING_DIM,
-    HIDDEN_DIM
-)
+    feed_forward = FeedForward(
+        EMBEDDING_DIM,
+        HIDDEN_DIM
+    )
 
-residual = ResidualConnection(feed_forward)
-
-
-# -------------------------------------------------
-# Forward Pass
-# -------------------------------------------------
-
-output = residual(x)
+    residual = ResidualConnection(feed_forward)
 
 
-# -------------------------------------------------
-# Display Results
-# -------------------------------------------------
+    # -------------------------------------------------
+    # Forward Pass
+    # -------------------------------------------------
 
-print("=" * 50)
-print("Input Shape")
-print("=" * 50)
-print(x.shape)
+    output = residual(x)
 
-print()
 
-print("=" * 50)
-print("Output Shape")
-print("=" * 50)
-print(output.shape)
+    # -------------------------------------------------
+    # Display Results
+    # -------------------------------------------------
 
-print()
+    print("=" * 50)
+    print("Input Shape")
+    print("=" * 50)
+    print(x.shape)
 
-print("=" * 50)
-print("First Token")
-print("=" * 50)
+    print()
 
-print("Input:")
-print(x[0, 0])
+    print("=" * 50)
+    print("Output Shape")
+    print("=" * 50)
+    print(output.shape)
 
-print()
+    print()
 
-print("Output:")
-print(output[0, 0])
+    print("=" * 50)
+    print("First Token")
+    print("=" * 50)
+
+    print("Input:")
+    print(x[0, 0])
+
+    print()
+
+    print("Output:")
+    print(output[0, 0])
+
+if __name__ == "__main__":
+    main()

@@ -20,8 +20,8 @@ import torch.nn as nn
 
 BATCH_SIZE = 2
 SEQUENCE_LENGTH = 5
-EMBEDDING_DIM = 16
-HIDDEN_DIM = 64
+EMBEDDING_DIM = 100 
+HIDDEN_DIM = 1024  # Typically 4 times the embedding dimension
 
 
 # -------------------------------------------------
@@ -67,50 +67,55 @@ class FeedForward(nn.Module):
 
         return x
 
+def main():
 
-# -------------------------------------------------
-# Create Model
-# -------------------------------------------------
+    # -------------------------------------------------
+    # Create Model
+    # -------------------------------------------------
 
-ffn = FeedForward(
-    EMBEDDING_DIM,
-    HIDDEN_DIM
-)
-
-
-# -------------------------------------------------
-# Forward Pass
-# -------------------------------------------------
-
-output = ffn(x)
+    ffn = FeedForward(
+        EMBEDDING_DIM,
+        HIDDEN_DIM
+    )
 
 
-# -------------------------------------------------
-# Display Results
-# -------------------------------------------------
+    # -------------------------------------------------
+    # Forward Pass
+    # -------------------------------------------------
 
-print("=" * 50)
-print("Input Shape")
-print("=" * 50)
-print(x.shape)
+    output = ffn(x)
 
-print()
 
-print("=" * 50)
-print("Output Shape")
-print("=" * 50)
-print(output.shape)
+    # -------------------------------------------------
+    # Display Results
+    # -------------------------------------------------
 
-print()
+    print("=" * 50)
+    print("Input Shape")
+    print("=" * 50)
+    print(x.shape)
 
-print("=" * 50)
-print("First Token Before FFN")
-print("=" * 50)
-print(x[0, 0])
+    print()
 
-print()
+    print("=" * 50)
+    print("Output Shape")
+    print("=" * 50)
+    print(output.shape)
 
-print("=" * 50)
-print("First Token After FFN")
-print("=" * 50)
-print(output[0, 0])
+    print()
+
+    print("=" * 50)
+    print("First Token Before FFN")
+    print("=" * 50)
+    print(x[0, 0])
+
+    print()
+
+    print("=" * 50)
+    print("First Token After FFN")
+    print("=" * 50)
+    print(output[0, 0])
+
+
+if __name__ == "__main__":
+    main()

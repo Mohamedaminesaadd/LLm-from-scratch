@@ -215,7 +215,7 @@ def main():
 
         print("Input IDs Shape       :", inputs.shape)
         print("Embedded Input Shape  :", embedded_inputs.shape)
-        print("Target IDs Shape      :", targets.shape)
+        print("Target IDs Shape      :", targets.shape) # during the training we don't embedding the training datasets
         print("Embedded Target Shape :", embedded_targets.shape)
 
         print()

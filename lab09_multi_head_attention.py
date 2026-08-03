@@ -3,9 +3,11 @@ from pathlib import Path
 from collections import Counter
 import re
 
+from lab06_positional_encoding import PositionalEncoding, TextDataset, build_vocabulary, clean_text, encode, load_text
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
+
 
 
 # -------------------------------------------------
@@ -30,125 +32,24 @@ EMBEDDING_DIM = 100
 # Load Dataset
 # -------------------------------------------------
 
-def load_text(path: Path) -> str:
-    with open(path, "r", encoding="utf-8") as file:
-        return file.read()
-
-
-def clean_text(text: str) -> str:
-    text = text.lower()
-    text = re.sub(r"[^a-z0-9\s]", "", text)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
-
 
 # -------------------------------------------------
 # Build Vocabulary
 # -------------------------------------------------
-
-def build_vocabulary(text):
-
-    counter = Counter(text.split())
-
-    word_to_id = {}
-    id_to_word = {}
-
-    idx = 0
-
-    for token in SPECIAL_TOKENS:
-        word_to_id[token] = idx
-        id_to_word[idx] = token
-        idx += 1
-
-    for word in sorted(counter.keys()):
-        word_to_id[word] = idx
-        id_to_word[idx] = word
-        idx += 1
-
-    return word_to_id, id_to_word
 
 
 # -------------------------------------------------
 # Encode Text
 # -------------------------------------------------
 
-def encode(text, word_to_id):
-
-    tokens = text.split()
-
-    ids = []
-
-    for token in tokens:
-        ids.append(word_to_id.get(token, word_to_id["<UNK>"]))
-
-    return ids
-
-
 # -------------------------------------------------
 # Dataset
 # -------------------------------------------------
-
-class TextDataset(Dataset):
-
-    def __init__(self, token_ids, sequence_length):
-
-        self.inputs = []
-        self.targets = []
-
-        for i in range(len(token_ids) - sequence_length):
-
-            x = token_ids[i:i + sequence_length]
-            y = token_ids[i + 1:i + sequence_length + 1]
-
-            self.inputs.append(torch.tensor(x, dtype=torch.long))
-            self.targets.append(torch.tensor(y, dtype=torch.long))
-
-    def __len__(self):
-        return len(self.inputs)
-
-    def __getitem__(self, index):
-        return self.inputs[index], self.targets[index]
-
-
-# -------------------------------------------------
-# Positional Encoding
-# -------------------------------------------------
-
-class PositionalEncoding(nn.Module):
-
-    def __init__(self, embedding_dim, max_length=5000):
-        super().__init__()
-
-        pe = torch.zeros(max_length, embedding_dim)
-
-        position = torch.arange(0, max_length, dtype=torch.float).unsqueeze(1)
-
-        div_term = torch.exp(
-            torch.arange(0, embedding_dim, 2, dtype=torch.float)
-            * (-math.log(10000.0) / embedding_dim)
-        )
-
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-
-        pe = pe.unsqueeze(0)
-
-        self.register_buffer("pe", pe)
-
-    def forward(self, x):
-
-        seq_len = x.size(1)
-
-        return x + self.pe[:, :seq_len]
-
 
 # -------------------------------------------------
 # Self Attention
 # -------------------------------------------------
 
-import math
-import torch
-import torch.nn as nn
 
 
 class MultiHeadSelfAttention(nn.Module):
@@ -200,7 +101,7 @@ class MultiHeadSelfAttention(nn.Module):
         attention = torch.matmul(attention_weights, V)
 
         # Concatenate heads
-        attention = attention.transpose(1, 2).contiguous()
+        attention = attention.transpose(1, 2).contiguous() # use for contiguous to make sure the tensor is change how is look in memory not just modified the stride 
         attention = attention.view(batch_size, seq_len, self.embedding_dim)
 
         # Final linear layer
