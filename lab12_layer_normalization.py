@@ -19,7 +19,7 @@ import torch.nn as nn
 
 BATCH_SIZE = 2
 SEQUENCE_LENGTH = 5
-EMBEDDING_DIM = 16
+EMBEDDING_DIM = 100 
 
 
 # -------------------------------------------------
@@ -46,47 +46,51 @@ layer_norm = nn.LayerNorm(EMBEDDING_DIM)
 
 output = layer_norm(x)
 
+def main():
+    
+    # -------------------------------------------------
+    # Display Results
+    # -------------------------------------------------
 
-# -------------------------------------------------
-# Display Results
-# -------------------------------------------------
+    print("=" * 50)
+    print("Input Shape")
+    print("=" * 50)
+    print(x.shape)
 
-print("=" * 50)
-print("Input Shape")
-print("=" * 50)
-print(x.shape)
+    print()
 
-print()
+    print("=" * 50)
+    print("Output Shape")
+    print("=" * 50)
+    print(output.shape)
 
-print("=" * 50)
-print("Output Shape")
-print("=" * 50)
-print(output.shape)
+    print()
 
-print()
+    print("=" * 50)
+    print("First Token Before LayerNorm")
+    print("=" * 50)
+    print(x[0, 0])
 
-print("=" * 50)
-print("First Token Before LayerNorm")
-print("=" * 50)
-print(x[0, 0])
+    print()
 
-print()
+    print("=" * 50)
+    print("First Token After LayerNorm")
+    print("=" * 50)
+    print(output[0, 0])
 
-print("=" * 50)
-print("First Token After LayerNorm")
-print("=" * 50)
-print(output[0, 0])
+    print()
 
-print()
+    print("=" * 50)
+    print("Mean After LayerNorm")
+    print("=" * 50)
+    print(output[0, 0].mean())
 
-print("=" * 50)
-print("Mean After LayerNorm")
-print("=" * 50)
-print(output[0, 0].mean())
+    print()
 
-print()
+    print("=" * 50)
+    print("Standard Deviation After LayerNorm")
+    print("=" * 50)
+    print(output[0, 0].std(unbiased=False))
 
-print("=" * 50)
-print("Standard Deviation After LayerNorm")
-print("=" * 50)
-print(output[0, 0].std(unbiased=False))
+if __name__ == "__main__":
+    main()

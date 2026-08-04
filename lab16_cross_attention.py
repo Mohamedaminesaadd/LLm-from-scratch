@@ -15,7 +15,7 @@ from lab06_positional_encoding import (
 )
 
 from lab13_encoder_block import (
-    TransformerBlock,
+    EncoderBlock,
 )
 
 from lab15_masked_multi_head_attention import (
@@ -71,7 +71,7 @@ class CrossAttention(nn.Module):
 
         attention_weights = torch.softmax(
             scores,
-            dim=-1
+            dim=-1 # Compute softmax along the last dimension
         )
 
         # -----------------------------------------
@@ -136,7 +136,19 @@ class MultiHeadCrossAttention(nn.Module):
                 decoder_input,
                 encoder_output):
 
-        batch_size = decoder_input.size(0)
+        #batch_size = decoder_input.size(0)
+        decoder_batch_size = decoder_input.size(0)
+        encoder_batch_size = encoder_output.size(0)
+        if decoder_batch_size != encoder_batch_size:
+            raise ValueError(
+                f"Batch size mismatch: "
+                f"decoder={decoder_batch_size}, "
+                f"encoder={encoder_batch_size}"
+            )
+
+        batch_size = decoder_batch_size
+
+
 
         # -----------------------------------------
         # Linear projections
@@ -255,8 +267,7 @@ DATASET_PATH_FR = Path("datasets/sample_fr.txt")
 
 SEQUENCE_LENGTH = 5
 BATCH_SIZE = 2
-
-EMBEDDING_DIM = 128
+EMBEDDING_DIM = 100
 HEAD_NUMBER = 4
 
 FF_HIDDEN_DIM = EMBEDDING_DIM * 4
@@ -364,7 +375,7 @@ def main():
     # Encoder
     # -------------------------------------------------
 
-    encoder = TransformerBlock(
+    encoder = EncoderBlock(
         embedding_dim=EMBEDDING_DIM,
         head_number=HEAD_NUMBER,
         hidden_dim=FF_HIDDEN_DIM,

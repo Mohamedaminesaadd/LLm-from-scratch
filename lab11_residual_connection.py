@@ -59,17 +59,20 @@ class FeedForward(nn.Module):
 # Residual Block
 # -------------------------------------------------
 
-class ResidualConnection(nn.Module):
+class AddNorm(nn.Module):
+    """
+    Post-norm (original paper):  LayerNorm(x + Dropout(sublayer(x)))
+    """
 
-    def __init__(self, sublayer):
-
+    def __init__(self, embedding_dim, dropout=0.1):
         super().__init__()
 
-        self.sublayer = sublayer
+        self.norm = nn.LayerNorm(embedding_dim)
+        self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
+    def forward(self, x, sublayer_output):
+        return self.norm(x + self.dropout(sublayer_output))
 
-        return x + self.sublayer(x)
 
 def main():
 
@@ -82,14 +85,14 @@ def main():
         HIDDEN_DIM
     )
 
-    residual = ResidualConnection(feed_forward)
+    residual = AddNorm(EMBEDDING_DIM)
 
 
     # -------------------------------------------------
     # Forward Pass
     # -------------------------------------------------
 
-    output = residual(x)
+    output = residual(x, feed_forward(x))
 
 
     # -------------------------------------------------

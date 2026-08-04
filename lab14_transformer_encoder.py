@@ -22,6 +22,7 @@ from lab13_encoder_block import (
     FF_HIDDEN_DIM,
     HEAD_NUMBER,
     AddNorm,
+    EncoderBlock,
     FeedForward,
     MultiHeadSelfAttention,
 )
@@ -37,34 +38,6 @@ NUM_LAYERS = 15
 # -------------------------------------------------
 # Encoder Block (one layer)
 # -------------------------------------------------
-
-class EncoderBlock(nn.Module):
-    """
-    One encoder layer:
-        x -> MultiHeadSelfAttention -> AddNorm -> FeedForward -> AddNorm
-    """
-
-    def __init__(self, embedding_dim, head_number, hidden_dim, dropout=0.1):
-        super().__init__()
-
-        self.attention = MultiHeadSelfAttention(embedding_dim, head_number)
-        self.add_norm_1 = AddNorm(embedding_dim, dropout)
-
-        self.feed_forward = FeedForward(embedding_dim, hidden_dim, dropout)
-        self.add_norm_2 = AddNorm(embedding_dim, dropout)
-
-    def forward(self, x):
-
-        # Sub-layer 1 : self-attention + residual + norm
-        attention_output, attention_weights = self.attention(x)
-        x = self.add_norm_1(x, attention_output)
-
-        # Sub-layer 2 : feed forward + residual + norm
-        feed_forward_output = self.feed_forward(x)
-        x = self.add_norm_2(x, feed_forward_output)
-
-        return x, attention_weights
-
 
 # -------------------------------------------------
 # Transformer Encoder (stack of N encoder blocks)

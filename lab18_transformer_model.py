@@ -16,13 +16,7 @@ from lab06_positional_encoding import (
 from lab14_transformer_encoder import TransformerEncoder
 from lab17_decoder_block import DecoderBlock
 
-
-# -------------------------------------------------
-# Transformer Model
-# -------------------------------------------------
-
-class TransformerModel(nn.Module):
-    """
+"""
     Complete Transformer Model
 
     Note
@@ -63,6 +57,12 @@ class TransformerModel(nn.Module):
               v
       Vocabulary Logits
     """
+# -------------------------------------------------
+# Transformer Model
+# -------------------------------------------------
+
+class TransformerModel(nn.Module):
+    
 
     def __init__(
         self,
@@ -90,7 +90,7 @@ class TransformerModel(nn.Module):
             num_layers=num_encoder_layers,
             dropout=dropout
         )
-
+        #we build the decoder layers as a list of decoder blocks, each with its own parameters
         # -----------------------------------------
         # Target Embedding
         # -----------------------------------------
@@ -109,7 +109,6 @@ class TransformerModel(nn.Module):
         # -----------------------------------------
 
         self.decoder_layers = nn.ModuleList(
-
             [
                 DecoderBlock(
                     embedding_dim=embedding_dim,
@@ -129,7 +128,7 @@ class TransformerModel(nn.Module):
 
         self.output_layer = nn.Linear(
             embedding_dim,
-            target_vocab_size
+            target_vocab_size # to get probalite of each word in the vocab target size 
         )
 
     # ---------------------------------------------
@@ -182,7 +181,7 @@ class TransformerModel(nn.Module):
 
         logits = self.output_layer(
             decoder_output
-        )
+        ) 
 
         return (
             logits,
@@ -202,12 +201,12 @@ DATASET_PATH_FR = Path("datasets/sample_fr.txt")
 SEQUENCE_LENGTH = 5
 BATCH_SIZE = 2
 
-EMBEDDING_DIM = 128
+EMBEDDING_DIM = 100
 HEAD_NUMBER = 4
 HIDDEN_DIM = EMBEDDING_DIM * 4
 
-NUM_ENCODER_LAYERS = 2
-NUM_DECODER_LAYERS = 2
+NUM_ENCODER_LAYERS = 15
+NUM_DECODER_LAYERS = 15
 
 DROPOUT = 0.1
 

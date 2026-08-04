@@ -1,6 +1,11 @@
 import torch
 import torch.nn as nn
 
+from torch.utils.data import DataLoader
+
+import math
+from pathlib import Path
+
 from lab13_encoder_block import (
     AddNorm,
     FeedForward,
@@ -15,12 +20,20 @@ from lab16_cross_attention import (
 )
 
 
-# -------------------------------------------------
-# Decoder Block
-# -------------------------------------------------
+from lab06_positional_encoding import (
+    PositionalEncoding,
+    TextDataset,
+    build_vocabulary,
+    clean_text,
+    encode,
+    load_text,
+)
 
-class DecoderBlock(nn.Module):
-    """
+from lab13_encoder_block import (
+    EncoderBlock,
+)
+
+"""
     Transformer Decoder Block
 
     Architecture
@@ -48,6 +61,13 @@ class DecoderBlock(nn.Module):
                   ▼
             decoder_output
     """
+
+
+# -------------------------------------------------
+# Decoder Block
+# -------------------------------------------------
+
+class DecoderBlock(nn.Module):
 
     def __init__(
         self,
@@ -102,12 +122,7 @@ class DecoderBlock(nn.Module):
             dropout
         )
 
-    def forward(
-        self,
-        decoder_input,
-        encoder_output
-    ):
-
+    def forward(self,decoder_input,encoder_output):
         # ---------------------------------------
         # Step 1
         # Masked Multi Head Attention
@@ -152,31 +167,12 @@ class DecoderBlock(nn.Module):
         )
 
         return (
-            output,
-            masked_weights,
-            cross_weights
+            output,#for the calculatoin the loss and optimizer to update the weights
+            masked_weights,#for the user to visualize the attention weights
+            cross_weights #for the user to visualize the attention weights
         )
 
 
-import math
-from pathlib import Path
-
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
-
-from lab06_positional_encoding import (
-    PositionalEncoding,
-    TextDataset,
-    build_vocabulary,
-    clean_text,
-    encode,
-    load_text,
-)
-
-from lab13_encoder_block import (
-    TransformerBlock,
-)
 
 # DecoderBlock is implemented in Part 1
 # from this file
@@ -191,7 +187,7 @@ DATASET_PATH_FR = Path("datasets/sample_fr.txt")
 SEQUENCE_LENGTH = 5
 BATCH_SIZE = 2
 
-EMBEDDING_DIM = 128
+EMBEDDING_DIM = 100
 HEAD_NUMBER = 4
 FF_HIDDEN_DIM = EMBEDDING_DIM * 4
 DROPOUT = 0.1
@@ -290,7 +286,7 @@ def main():
     # Encoder
     # -------------------------------------------------
 
-    encoder = TransformerBlock(
+    encoder = EncoderBlock(
         embedding_dim=EMBEDDING_DIM,
         head_number=HEAD_NUMBER,
         hidden_dim=FF_HIDDEN_DIM,

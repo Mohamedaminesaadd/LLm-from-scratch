@@ -39,31 +39,28 @@ x = torch.randn(
 # Feed Forward Network
 # -------------------------------------------------
 
+
 class FeedForward(nn.Module):
+    """
+    Applied independently to each position:
+        Linear(d_model -> d_ff) -> ReLU -> Dropout -> Linear(d_ff -> d_model)
+    """
 
-    def __init__(self, embedding_dim, hidden_dim):
-
+    def __init__(self, embedding_dim, hidden_dim, dropout=0.1):
         super().__init__()
 
-        self.linear1 = nn.Linear(
-            embedding_dim,
-            hidden_dim
-        )
-
-        self.activation = nn.GELU()
-
-        self.linear2 = nn.Linear(
-            hidden_dim,
-            embedding_dim
-        )
+        self.linear_1 = nn.Linear(embedding_dim, hidden_dim)
+        self.activation = nn.ReLU()
+        self.dropout = nn.Dropout(dropout)
+        self.linear_2 = nn.Linear(hidden_dim, embedding_dim)
 
     def forward(self, x):
+        # x: (batch_size, seq_len, embedding_dim)
 
-        x = self.linear1(x)
-
+        x = self.linear_1(x)
         x = self.activation(x)
-
-        x = self.linear2(x)
+        x = self.dropout(x)
+        x = self.linear_2(x)
 
         return x
 
