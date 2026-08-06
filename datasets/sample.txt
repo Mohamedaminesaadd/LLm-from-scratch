@@ -1,39 +1,537 @@
+import math
+from pathlib import Path
+
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+
+from lab06_positional_encoding import (
+    PositionalEncoding,
+    TextDataset,
+    build_vocabulary,
+    clean_text,
+    encode,
+    load_text,
+)
+
+from lab13_encoder_block import (
+    EncoderBlock,
+)
+
+from lab15_masked_multi_head_attention import (
+    MaskedMultiHeadSelfAttention,
+)
 
 
-**Title: The Unseen Threads: How Urban Ecology Redefines the Human-Nature Nexus in the Anthropocene**
+# -------------------------------------------------
+# Cross Attention (Single Head)
+# -------------------------------------------------
 
-**Introduction: The City as a Living Organism**
+class CrossAttention(nn.Module):
+    """
+    Single-Head Cross Attention
 
-For centuries, the city has been conceptualized as the ultimate symbol of human triumph over nature. From the grid-planned streets of ancient Rome to the steel-and-glass canyons of modern Manhattan, urban centers have been viewed as fortresses of civilization, erected against the wild chaos of the natural world. This dualism—the city versus the country, the artificial versus the organic—has deeply permeated our cultural psyche, influencing everything from literature and philosophy to public policy and architectural design. We speak of "conquering" frontiers, "taming" rivers, and "paving over" wilderness, as if the act of urbanization is a permanent divorce from the ecological systems that sustain us. However, this perspective, while historically dominant, is not only flawed but dangerously myopic. In the 21st century, as we grapple with the accelerating impacts of climate change, biodiversity loss, and resource scarcity, a profound shift in understanding is taking place. The city is no longer seen as an antagonist to nature, but rather as a complex, dynamic ecosystem in its own right. Urban ecology, a relatively nascent interdisciplinary field, is dismantling the old binaries and revealing the invisible, intricate threads that bind human infrastructure to natural processes. It posits that the city is not a sterile wasteland but a novel biome, characterized by unique assemblages of species, altered biogeochemical cycles, and emergent patterns of self-organization. To understand this is to recognize that the future of both humanity and the planet will be written largely within the concrete boundaries of our cities, and that the health of these urban ecosystems is inextricably linked to our own physical and psychological well-being.
+    Q comes from the decoder.
+    K and V come from the encoder.
+    """
 
-**The Historical Amnesia: Erasing Nature from the Urban Narrative**
+    def __init__(self, embedding_dim):
+        super().__init__()
 
-The ideological separation of cities from nature has deep historical roots. The Enlightenment, with its emphasis on reason and order, framed nature as a resource to be exploited and a force to be controlled. This worldview reached its apex during the Industrial Revolution, when cities became nodes of production, spewing smoke and effluents into the air and water. The aesthetic of the sublime, so prevalent in Romantic poetry, found its setting in the rugged mountains and untamed forests, while the city was relegated to the realm of the mundane and the polluted. This intellectual segregation was further reinforced by the rise of modern ecology itself. Early ecologists, concerned with pristine wilderness, often studied environments where human influence was minimal, inadvertently treating the city as an aberration, a null environment unsuitable for serious scientific inquiry. The Chicago School of sociology in the 1920s began to apply ecological concepts like invasion and succession to urban neighborhoods, but their focus was on human social dynamics rather than the biological or physical environment. Consequently, for much of the 20th century, urban planning was an exercise in thermodynamics, focused on the efficient flow of energy, materials, and people, with little regard for the natural capital upon which the city depended. We built massive sewer systems to whisk away waste, constructed extensive road networks to facilitate mobility, and engineered flood-control structures to manage water, all while ignoring the fundamental ecological services that green spaces and natural waterways could provide. This resulted in the "brownfield" legacy of industrial cities, where toxic soils and impervious surfaces created a landscape that seemed utterly divorced from the cycles of life, a testament to our collective amnesia regarding our own biological dependence.
+        self.embedding_dim = embedding_dim
 
-**The Soil Beneath the Pavement: Rediscovering Urban Biodiversity**
+        self.query = nn.Linear(embedding_dim, embedding_dim)
+        self.key = nn.Linear(embedding_dim, embedding_dim)
+        self.value = nn.Linear(embedding_dim, embedding_dim)
 
-Yet, nature is remarkably resilient and has never truly abandoned the city; it has simply adapted to new and often extreme conditions. The nascent field of urban ecology has begun to meticulously document the surprising biodiversity that thrives within the urban matrix, challenging our preconceptions of the city as a biological desert. Consider the peregrine falcon, a species once driven to the brink of extinction by DDT, which has found an ideal habitat in the towering skyscrapers of New York City. The artificial cliffs of our buildings mimic their natural nesting sites, and the abundant population of pigeons and starlings provides a steady food supply. Similarly, coyotes have been observed navigating the streets of Chicago, raccoons have mastered the art of opening trash bins in Toronto, and mountain lions have been tracked through the sprawling suburbs of Los Angeles. These are not isolated anomalies but manifestations of a global phenomenon where wildlife is adapting to the urban niche. On a smaller scale, the biodiversity is even more staggering. Studies have shown that certain taxa of insects, such as bees and ants, can exhibit greater genetic diversity in urban parks than in adjacent agricultural landscapes. The cracks in the pavement, the vacant lots, and the green roofs create a mosaic of microhabitats, each hosting a unique community of organisms. This urban flora and fauna, often composed of a mix of native and introduced species, forms novel ecosystems. While these ecosystems may not have the same species composition as a pristine forest, they provide vital functions, including pollination, pest control, and nutrient cycling. The challenge for urban ecologists is not to try to restore a pre-industrial ideal, but to understand these novel ecosystems and manage them to enhance their resilience and services. This means recognizing that the weeds pushing through the asphalt are not just aesthetic nuisances but pioneers of ecological succession, creating the foundational conditions for more complex communities to develop.
+    def forward(self, decoder_input, encoder_output):
 
-**Hydrology and the Concrete River: Reimagining Urban Water Cycles**
+        # -----------------------------------------
+        # Linear projections
+        # -----------------------------------------
 
-Perhaps no element of the natural world has been more thoroughly transformed by urbanization than water. The pristine hydrological cycle—where precipitation infiltrates the soil, replenishes groundwater, and slowly feeds streams—is completely disrupted by the built environment. The vast expanses of impervious surfaces like rooftops, parking lots, and roads prevent water from soaking into the ground. Instead, rainfall is rapidly channeled into storm drains, becoming a violent torrent that overwhelms sewer systems and causes urban flash floods. In combined sewer systems, common in older cities, this surge of stormwater can trigger overflow events, discharging untreated human sewage directly into rivers and lakes. This is not a failure of infrastructure but a failure of design, a reflection of a mechanistic worldview that treats water as a waste product to be disposed of as quickly and cheaply as possible. The consequences are severe: degraded water quality, loss of aquatic habitat, and increased flood risk for vulnerable communities. However, a paradigm shift is underway, championed by the concepts of green infrastructure and water-sensitive urban design. Rather than viewing stormwater as a nuisance, innovators are beginning to see it as a resource. Green roofs, rain gardens, bioswales, and permeable pavements are being implemented to mimic the natural water cycle. These strategies capture rainwater at its source, allowing it to infiltrate the soil, filter pollutants, and recharge aquifers. In cities like Portland, Oregon, and Philadelphia, Pennsylvania, massive investments are being made to decouple impervious surfaces and create a network of green corridors that manage stormwater while also providing habitat and recreational space. This approach not only reduces the burden on grey infrastructure but also creates more livable, pleasant neighborhoods. It is a form of ecological reconciliation, a way of designing with natural systems rather than against them. It forces us to see the city not as a concrete bowl that sheds water, but as a sponge that can absorb, cleanse, and store this vital resource.
+        Q = self.query(decoder_input)
+        K = self.key(encoder_output)
+        V = self.value(encoder_output)
 
-**The Atmospheric Landscape: Air Quality, Urban Heat Islands, and Climate Regulation**
+        # -----------------------------------------
+        # Attention scores
+        # -----------------------------------------
 
-The urban atmosphere is a complex chemical soup, profoundly influenced by the metabolism of the city. Vehicles, industrial processes, and building heating and cooling systems release a cocktail of pollutants, including nitrogen oxides, particulate matter, volatile organic compounds, and carbon dioxide. These emissions have far-reaching consequences, impacting not only local air quality and human health but also contributing to global climate change. Furthermore, the physical properties of the urban environment—the dark, heat-absorbing surfaces of asphalt and concrete, the lack of vegetation, and the geometric canyons formed by buildings—create the urban heat island effect. This phenomenon causes cities to be several degrees warmer than their surrounding rural areas, especially at night. This elevated temperature exacerbates the demand for air conditioning, which in turn increases energy consumption and greenhouse gas emissions, creating a dangerous feedback loop. It also intensifies the formation of ground-level ozone (smog), a respiratory irritant. The social justice implications of this are profound, as heat islands disproportionately affect low-income neighborhoods and communities of color, which often have less tree cover and more industrial infrastructure. Urban ecology addresses these atmospheric challenges by leveraging the ecosystem services provided by trees and vegetation. Urban forests act as powerful biological filters, absorbing gaseous pollutants through their leaves and intercepting particulate matter. Trees also provide critical cooling through the process of transpiration, which converts liquid water into water vapor, absorbing significant amounts of energy in the process. Strategic urban forestry—planting trees along streets, creating pocket parks, and preserving remnant woodlands—is one of the most cost-effective strategies for mitigating both air pollution and the urban heat island effect. This is not merely an aesthetic improvement but a critical public health intervention. By strategically incorporating vegetation into the built environment, we can create a more comfortable, healthier, and climate-resilient city, demonstrating that the city and its atmosphere are in a constant and dynamic state of exchange.
+        scores = torch.matmul(
+            Q,
+            K.transpose(-2, -1)
+        )
 
-**The Human Dimension: Psychological Well-being and Social Cohesion**
+        scores = scores / math.sqrt(self.embedding_dim)
 
-The study of urban ecology extends beyond the biophysical to encompass the intricate relationship between the urban environment and the human mind. The rapid pace of urbanization has coincided with a marked increase in mental health disorders, including anxiety, depression, and attention fatigue. While this cannot be attributed solely to the environment, a growing body of research in environmental psychology suggests that exposure to nature has profound restorative effects on cognitive function and emotional well-being. The "biophilia hypothesis" posits that humans have an innate, evolutionary-based affinity for nature, and that our modern, sterile urban environments may be triggering a form of "environmental deprivation." Spending time in a park, or even just having a view of trees from a window, can reduce stress, lower blood pressure, improve mood, and restore the capacity for directed attention. These are not just subjective feelings; they are measurable physiological and neurological responses. Furthermore, urban green spaces function as vital social infrastructure. Parks, community gardens, and waterfront esplanades are the "living rooms" of the city, spaces where people from diverse backgrounds can interact, fostering social cohesion and a sense of community. These spaces provide opportunities for physical activity, which is crucial for combating the sedentary lifestyle associated with urban living. They also serve as outdoor classrooms, offering unique opportunities for environmental education and citizen science. When residents participate in the stewardship of their local parks—planting trees, removing invasive species, or monitoring water quality—they develop a sense of ownership and connection to place. This hands-on engagement transforms a passive relationship with the environment into an active one, reinforcing the idea that humans are not outside of nature but an integral part of it. The social and psychological benefits of urban nature demonstrate that ecological restoration is not a luxury but a fundamental component of public health and social equity.
+        # -----------------------------------------
+        # Softmax
+        # -----------------------------------------
 
-**The Food System and Urban Agriculture: Reconnecting Production and Consumption**
+        attention_weights = torch.softmax(
+            scores,
+            dim=-1 # Compute softmax along the last dimension
+        )
 
-One of the most profound disconnections in the modern urban lifestyle is the separation of food production from consumption. The average urban dweller is completely divorced from the agricultural processes that sustain them, purchasing food that has traveled, on average, thousands of miles from industrial farms. This industrial food system is a major driver of greenhouse gas emissions, deforestation, and water depletion. It also creates a deep sense of alienation, where we lose touch with the seasonal cycles, the taste of fresh produce, and the knowledge of how our food is grown. Urban agriculture, including community gardens, rooftop farms, and vertical farming initiatives, is an effort to re-localize food systems and shorten the supply chain. These projects not only provide fresh, nutritious produce to urban food deserts but also create a host of ecological and social benefits. They transform vacant lots from dumping grounds into productive green spaces, improving soil health and reducing the heat island effect. Composting organic waste from households and restaurants closes the nutrient loop, returning essential elements to the soil and reducing the burden on landfills. While the total food production from urban farms may never be sufficient to feed entire cities, its impact extends far beyond sheer volume. The act of gardening itself is a form of ecological literacy. It teaches patience, observation, and an understanding of biological processes—from seed germination to pollination to decomposition. For many urban youth, a school garden is their first encounter with the natural world, sparking an interest in science and sustainability. Urban agriculture also fosters economic opportunities and entrepreneurship, allowing for the creation of small-scale food businesses. It is a powerful tool for community development, resilience, and resistance against the homogenizing forces of the global food system. By bringing nature back into the city through food, we create a more tangible and direct connection to the ecological processes that sustain life.
+        # -----------------------------------------
+        # Weighted sum
+        # -----------------------------------------
 
-**The Edge Effect and Urban-Rural Interfaces: Rethinking Boundaries**
+        output = torch.matmul(
+            attention_weights,
+            V
+        )
 
-The boundary between the city and the countryside, or the "urban-rural interface," is often perceived as a distinct line on a map. However, from an ecological perspective, this edge is a dynamic and ecologically productive transition zone, known as the "edge effect." In ecology, edges often support a higher diversity of species because they contain organisms from both adjacent habitats. In the context of the city, the exurbs and peri-urban areas are where the most intense ecological interactions occur. These are the landscapes of suburban sprawl, where wildlife frequently comes into conflict with human populations. It is also where agricultural land is being rapidly converted to low-density housing, leading to fragmentation and habitat loss. However, this interface also presents a unique opportunity for design. Instead of creating abrupt barriers or allowing for chaotic sprawl, we can design our cities to have "soft edges," integrating agricultural buffers, greenbelts, and natural corridors that connect the urban core to the surrounding countryside. This creates a "multi-functional landscape" that can support agricultural production, wildlife habitat, and human recreation simultaneously. For example, the "green belt" policies in cities like London and Toronto have been instrumental in preventing sprawl, protecting watersheds, and providing accessible recreational space for millions of residents. By treating the city as a node within a broader regional landscape, rather than a closed system, we can address issues of water supply, food security, and biodiversity at a larger, more effective scale. This re-framing challenges the very concept of the city as a separate entity and positions it as an integral part of the surrounding bioregion, emphasizing the interdependence of all scales of settlement.
+        return output, attention_weights
 
-**Conclusion: The Symbiocene and the Future of Urban Life**
 
-As we move deeper into the Anthropocene—the proposed epoch in which human activity has become the dominant influence on climate and the environment—our greatest challenge is to reconsider our relationship with the living world. The traditional model of the city as a parasitic entity, draining resources from the hinterland and expelling waste, is no longer viable. The principles of urban ecology offer a path forward, not by demonizing the city or pining for a nostalgic past, but by embracing the city as a complex ecosystem that can be designed and managed for health, resilience, and sustainability. This involves a radical rethinking of what constitutes productivity and value. It means valuing the ecosystem services provided by a tree—like carbon sequestration, air purification, and stormwater management—alongside the economic value of a building. It means fostering an urban metabolism that is circular, where waste from one process becomes a resource for another, much like a natural ecosystem. The future of humanity is undeniably urban, but the quality of that urban experience will depend on our ability to weave the "unseen threads" of nature back into the fabric of our cities. This is the promise of the "Symbiocene," a proposed future epoch characterized by mutually beneficial relationships between humans and the rest of the ecosystem. The science of urban ecology is not just an academic discipline; it is a new way of seeing and thinking. It is a call to action for policymakers, planners, architects, and citizens to co-create a habitat that is not merely less destructive, but actively regenerative. By integrating nature into our homes, our streets, and our public spaces, we can build cities that are not only more ecologically sound but also more emotionally and spiritually fulfilling—cities that remind us, in their very design, that we are part of nature, not apart from it. The pavement is not the end of the natural world; it is simply a different substrate upon which the story of life continues to unfold, and we are its principal authors. The choice before us is whether to write a narrative of collapse or a narrative of regeneration, and the pen is in our hands.
+# -------------------------------------------------
+# Multi-Head Cross Attention
+# -------------------------------------------------
+
+class MultiHeadCrossAttention(nn.Module):
+    """
+    Multi-Head Cross Attention
+
+    Q : Decoder
+
+    K,V : Encoder
+    """
+
+    def __init__(self,
+                 embedding_dim,
+                 head_number):
+
+        super().__init__()
+
+        assert embedding_dim % head_number == 0
+
+        self.embedding_dim = embedding_dim
+        self.head_number = head_number
+
+        self.head_dim = embedding_dim // head_number
+
+        self.query = nn.Linear(
+            embedding_dim,
+            embedding_dim
+        )
+
+        self.key = nn.Linear(
+            embedding_dim,
+            embedding_dim
+        )
+
+        self.value = nn.Linear(
+            embedding_dim,
+            embedding_dim
+        )
+
+        self.output = nn.Linear(
+            embedding_dim,
+            embedding_dim
+        )
+
+    def forward(self,
+                decoder_input,
+                encoder_output):
+
+        #batch_size = decoder_input.size(0)
+        decoder_batch_size = decoder_input.size(0)
+        encoder_batch_size = encoder_output.size(0)
+        if decoder_batch_size != encoder_batch_size:
+            raise ValueError(
+                f"Batch size mismatch: "
+                f"decoder={decoder_batch_size}, "
+                f"encoder={encoder_batch_size}"
+            )
+
+        batch_size = decoder_batch_size
+
+
+
+        # -----------------------------------------
+        # Linear projections
+        # -----------------------------------------
+
+        Q = self.query(decoder_input)
+        K = self.key(encoder_output)
+        V = self.value(encoder_output)
+
+        # -----------------------------------------
+        # Split into heads
+        # -----------------------------------------
+
+        Q = Q.view(
+            batch_size,
+            -1,
+            self.head_number,
+            self.head_dim
+        )
+
+        K = K.view(
+            batch_size,
+            -1,
+            self.head_number,
+            self.head_dim
+        )
+
+        V = V.view(
+            batch_size,
+            -1,
+            self.head_number,
+            self.head_dim
+        )
+
+        # -----------------------------------------
+        # Move heads dimension
+        # -----------------------------------------
+
+        Q = Q.transpose(1, 2)
+        K = K.transpose(1, 2)
+        V = V.transpose(1, 2)
+
+        # Shapes
+        #
+        # Q
+        # (batch, heads, target_seq, head_dim)
+        #
+        # K
+        # (batch, heads, source_seq, head_dim)
+        #
+        # V
+        # (batch, heads, source_seq, head_dim)
+
+        # -----------------------------------------
+        # Attention scores
+        # -----------------------------------------
+
+        scores = torch.matmul(
+            Q,
+            K.transpose(-2, -1)
+        )
+
+        scores = scores / math.sqrt(self.head_dim)
+
+        # Shape
+        #
+        # (batch, heads,
+        #  target_seq,
+        #  source_seq)
+
+        # -----------------------------------------
+        # Softmax
+        # -----------------------------------------
+
+        attention_weights = torch.softmax(
+            scores,
+            dim=-1
+        )
+
+        # -----------------------------------------
+        # Weighted sum
+        # -----------------------------------------
+
+        attention = torch.matmul(
+            attention_weights,
+            V
+        )
+
+        # -----------------------------------------
+        # Concatenate heads
+        # -----------------------------------------
+
+        attention = attention.transpose(1, 2)
+
+        attention = attention.contiguous().view(
+            batch_size,
+            -1,
+            self.embedding_dim
+        )
+
+        # -----------------------------------------
+        # Final Linear Layer
+        # -----------------------------------------
+
+        output = self.output(attention)
+
+        return output, attention_weights
+
+
+# -------------------------------------------------
+# Configuration
+# -------------------------------------------------
+
+DATASET_PATH_EN = Path("datasets/sample.txt")
+DATASET_PATH_FR = Path("datasets/sample_fr.txt")
+
+SEQUENCE_LENGTH = 5
+BATCH_SIZE = 2
+EMBEDDING_DIM = 100
+HEAD_NUMBER = 4
+
+FF_HIDDEN_DIM = EMBEDDING_DIM * 4
+DROPOUT = 0.1
+
+
+# -------------------------------------------------
+# Main
+# -------------------------------------------------
+
+def main():
+
+    print("=" * 60)
+    print("LAB 16 - CROSS ATTENTION")
+    print("=" * 60)
+
+    # -------------------------------------------------
+    # Load datasets
+    # -------------------------------------------------
+
+    text_en = load_text(DATASET_PATH_EN)
+    text_fr = load_text(DATASET_PATH_FR)
+
+    text_en = clean_text(text_en)
+    text_fr = clean_text(text_fr)
+
+    print("English dataset length :", len(text_en))
+    print("French dataset length  :", len(text_fr))
+    print()
+
+    # -------------------------------------------------
+    # Build vocabularies
+    # -------------------------------------------------
+
+    word_to_id_en, id_to_word_en = build_vocabulary(text_en)
+    word_to_id_fr, id_to_word_fr = build_vocabulary(text_fr)
+
+    print("English vocabulary :", len(word_to_id_en))
+    print("French vocabulary  :", len(word_to_id_fr))
+    print()
+
+    # -------------------------------------------------
+    # Encode
+    # -------------------------------------------------
+
+    token_ids_en = encode(
+        text_en,
+        word_to_id_en
+    )
+
+    token_ids_fr = encode(
+        text_fr,
+        word_to_id_fr
+    )
+
+    # -------------------------------------------------
+    # Dataset
+    # -------------------------------------------------
+
+    dataset_en = TextDataset(
+        token_ids_en,
+        SEQUENCE_LENGTH
+    )
+
+    dataset_fr = TextDataset(
+        token_ids_fr,
+        SEQUENCE_LENGTH
+    )
+
+    # -------------------------------------------------
+    # DataLoader
+    # -------------------------------------------------
+
+    dataloader_en = DataLoader(
+        dataset_en,
+        batch_size=BATCH_SIZE,
+        shuffle=False
+    )
+
+    dataloader_fr = DataLoader(
+        dataset_fr,
+        batch_size=BATCH_SIZE,
+        shuffle=False
+    )
+
+    # -------------------------------------------------
+    # Embeddings
+    # -------------------------------------------------
+
+    embedding_en = nn.Embedding(
+        len(word_to_id_en),
+        EMBEDDING_DIM
+    )
+
+    embedding_fr = nn.Embedding(
+        len(word_to_id_fr),
+        EMBEDDING_DIM
+    )
+
+    positional_encoding = PositionalEncoding(
+        EMBEDDING_DIM
+    )
+
+    # -------------------------------------------------
+    # Encoder
+    # -------------------------------------------------
+
+    encoder = EncoderBlock(
+        embedding_dim=EMBEDDING_DIM,
+        head_number=HEAD_NUMBER,
+        hidden_dim=FF_HIDDEN_DIM,
+        dropout=DROPOUT
+    )
+
+    encoder.eval()
+
+    # -------------------------------------------------
+    # Decoder Masked Self Attention
+    # -------------------------------------------------
+
+    decoder_attention = MaskedMultiHeadSelfAttention(
+        embedding_dim=EMBEDDING_DIM,
+        head_number=HEAD_NUMBER
+    )
+
+    decoder_attention.eval()
+
+    # -------------------------------------------------
+    # Cross Attention
+    # -------------------------------------------------
+
+    cross_attention = MultiHeadCrossAttention(
+        embedding_dim=EMBEDDING_DIM,
+        head_number=HEAD_NUMBER
+    )
+
+    cross_attention.eval()
+
+    print("=" * 60)
+    print("MODEL CREATED")
+    print("=" * 60)
+    print()
+
+    # -------------------------------------------------
+    # Iterate over both datasets
+    # -------------------------------------------------
+
+    for batch_index, (
+        (inputs_en, targets_en),
+        (inputs_fr, targets_fr)
+    ) in enumerate(zip(dataloader_en, dataloader_fr)):
+
+        print("=" * 60)
+        print(f"BATCH {batch_index}")
+        print("=" * 60)
+
+        print("English Input Shape :", inputs_en.shape)
+        print("French  Input Shape :", inputs_fr.shape)
+        print()
+
+        # -----------------------------------------
+        # Encoder embeddings
+        # -----------------------------------------
+
+        encoder_embeddings = embedding_en(inputs_en)
+
+        encoder_embeddings = positional_encoding(
+            encoder_embeddings
+        )
+
+        # -----------------------------------------
+        # Decoder embeddings
+        # -----------------------------------------
+
+        decoder_embeddings = embedding_fr(inputs_fr)
+
+        decoder_embeddings = positional_encoding(
+            decoder_embeddings
+        )
+
+        print("Encoder Embeddings :", encoder_embeddings.shape)
+        print("Decoder Embeddings :", decoder_embeddings.shape)
+        print()
+
+        # -----------------------------------------
+        # Encoder
+        # -----------------------------------------
+
+        encoder_output, encoder_attention = encoder(
+            encoder_embeddings
+        )
+
+        print("=" * 60)
+        print("ENCODER")
+        print("=" * 60)
+
+        print("Encoder Output Shape :", encoder_output.shape)
+        print("Encoder Attention Shape :", encoder_attention.shape)
+        print()
+
+        # -----------------------------------------
+        # Decoder (Masked Self Attention)
+        # -----------------------------------------
+
+        decoder_output, decoder_attention_weights = decoder_attention(
+            decoder_embeddings
+        )
+
+        print("=" * 60)
+        print("MASKED SELF ATTENTION")
+        print("=" * 60)
+
+        print("Decoder Output Shape :", decoder_output.shape)
+        print("Decoder Attention Shape :", decoder_attention_weights.shape)
+        print()
+
+        # -----------------------------------------
+        # Cross Attention
+        # -----------------------------------------
+
+        cross_output, cross_attention_weights = cross_attention(
+            decoder_output,
+            encoder_output
+        )
+
+        print("=" * 60)
+        print("CROSS ATTENTION")
+        print("=" * 60)
+
+        print("Cross Output Shape :", cross_output.shape)
+        print("Cross Attention Shape :", cross_attention_weights.shape)
+        print()
+
+        # -----------------------------------------
+        # Display Attention Matrix
+        # -----------------------------------------
+
+        print("=" * 60)
+        print("HEAD 0 ATTENTION MATRIX")
+        print("=" * 60)
+
+        print(cross_attention_weights[0, 0])
+        print()
+
+        # -----------------------------------------
+        # Display Token Representations
+        # -----------------------------------------
+
+        print("=" * 60)
+        print("DECODER TOKEN REPRESENTATIONS")
+        print("=" * 60)
+
+        for i in range(inputs_fr.shape[1]):
+
+            token_id = inputs_fr[0, i].item()
+
+            token = id_to_word_fr[token_id]
+
+            print(
+                f"{token:12} -> {cross_output[0, i, :8]}"
+            )
+
+        break
+
+
+if __name__ == "__main__":
+    main()

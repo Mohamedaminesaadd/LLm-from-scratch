@@ -1,877 +1,993 @@
 """
 ==========================================================
-Lab 24 - Byte Pair Encoding (BPE) Tokenizer
+Lab 26 - Learning Rate Scheduling
 ==========================================================
 
-Objective:
+Objectives:
 
-1. Load a text corpus.
-2. Count word frequencies.
-3. Represent words as sequences of characters.
-4. Count adjacent token pairs.
-5. Find the most frequent pair.
-6. Merge the most frequent pair.
-7. Repeat the process to learn BPE merge rules.
-8. Build a token vocabulary.
-9. Tokenize new text using learned merges.
-10. Encode tokens into IDs.
-11. Decode IDs back into text.
+1. Understand why the learning rate should change.
+2. Explore StepLR.
+3. Explore ExponentialLR.
+4. Explore CosineAnnealingLR.
+5. Understand warmup.
+6. Implement the Transformer learning-rate schedule.
+7. Change learning rate at every training step.
+8. Integrate the scheduler with Adam.
+9. Save and restore scheduler state.
 
-This implementation is intentionally simple and educational.
-It implements the core idea behind BPE from scratch.
+Transformer schedule:
+
+    lr = d_model^(-0.5) *
+         min(
+             step^(-0.5),
+             step * warmup_steps^(-1.5)
+         )
+
+During warmup:
+    learning rate increases.
+
+After warmup:
+    learning rate decreases approximately as:
+
+        1 / sqrt(step)
 """
 
-import re
+import math
 
-from collections import Counter
-from pathlib import Path
+import torch
+import torch.nn as nn
 
 
-# -------------------------------------------------
+# =========================================================
 # Configuration
-# -------------------------------------------------
+# =========================================================
 
-DATASET_PATH = Path(
-    "datasets/sample.txt"
+LEARNING_RATE = 0.001
+
+EMBEDDING_DIM = 128
+
+WARMUP_STEPS = 400
+
+TOTAL_STEPS = 2000
+
+
+# =========================================================
+# Device
+# =========================================================
+
+device = torch.device(
+    "cuda" if torch.cuda.is_available() else "cpu"
 )
 
-NUM_MERGES = 100
+print("Device:", device)
 
 
-SPECIAL_TOKENS = [
-    "<PAD>",
-    "<UNK>",
-    "<BOS>",
-    "<EOS>",
-]
+# =========================================================
+# Simple Model Used For Demonstrations
+# =========================================================
 
+class SimpleModel(nn.Module):
 
-END_OF_WORD = "</w>"
+    def __init__(self):
 
+        super().__init__()
 
-# =================================================
-# 1. Load Corpus
-# =================================================
-
-def load_corpus(path):
-
-    if not path.exists():
-
-        raise FileNotFoundError(
-            f"Dataset not found: {path}"
+        self.linear = nn.Linear(
+            10,
+            5
         )
 
-    with open(
-        path,
-        "r",
-        encoding="utf-8"
-    ) as file:
+    def forward(self, x):
 
-        text = file.read()
-
-    return text
+        return self.linear(x)
 
 
-# =================================================
-# Clean Text
-# =================================================
+# =========================================================
+# Helper Function
+# =========================================================
 
-def clean_text(text):
-
-    text = text.lower()
-
-    text = re.sub(
-        r"[^\w\s']",
-        " ",
-        text
-    )
-
-    text = re.sub(
-        r"\s+",
-        " ",
-        text
-    )
-
-    return text.strip()
-
-
-# =================================================
-# 2. Build Word Frequency
-# =================================================
-
-def build_word_frequency(text):
-
-    words = text.split()
-
-    word_frequency = Counter(words)
-
-    return word_frequency
-
-
-# =================================================
-# 3. Initialize Vocabulary
-# =================================================
-
-def initialize_vocabulary(
-    word_frequency
+def get_learning_rate(
+    optimizer
 ):
 
-    vocabulary = {}
-
-    for word, frequency in word_frequency.items():
-
-        # Example:
-        #
-        # low
-        #
-        # becomes
-        #
-        # ("l", "o", "w", "</w>")
-
-        symbols = tuple(
-            list(word) + [END_OF_WORD]
-        )
-
-        vocabulary[symbols] = frequency
-
-    return vocabulary
+    return optimizer.param_groups[0]["lr"]
 
 
-# =================================================
-# 4. Get Pair Frequencies
-# =================================================
+# =========================================================
+# 1. Fixed Learning Rate
+# =========================================================
 
-def get_pair_frequencies(
-    vocabulary
-):
-
-    pair_frequencies = Counter()
-
-    for symbols, frequency in vocabulary.items():
-
-        # Example:
-        #
-        # ("l", "o", "w", "</w>")
-        #
-        # pairs:
-        #
-        # ("l", "o")
-        # ("o", "w")
-        # ("w", "</w>")
-
-        for i in range(
-            len(symbols) - 1
-        ):
-
-            pair = (
-                symbols[i],
-                symbols[i + 1]
-            )
-
-            pair_frequencies[pair] += frequency
-
-    return pair_frequencies
-
-
-# =================================================
-# 5. Find Best Pair
-# =================================================
-
-def find_best_pair(
-    pair_frequencies
-):
-
-    if not pair_frequencies:
-
-        return None
-
-    best_pair = max(
-        pair_frequencies,
-        key=pair_frequencies.get
-    )
-
-    return best_pair
-
-
-# =================================================
-# 6. Merge Pair
-# =================================================
-
-def merge_pair(
-    pair,
-    vocabulary
-):
-
-    first, second = pair
-
-    merged_symbol = (
-        first + second
-    )
-
-    new_vocabulary = {}
-
-    # -------------------------------------------------
-    # Process every word representation
-    # -------------------------------------------------
-
-    for symbols, frequency in vocabulary.items():
-
-        new_symbols = []
-
-        i = 0
-
-        while i < len(symbols):
-
-            # -----------------------------------------
-            # Check whether current + next symbol
-            # corresponds to the pair we want to merge
-            # -----------------------------------------
-
-            if (
-                i < len(symbols) - 1
-                and symbols[i] == first
-                and symbols[i + 1] == second
-            ):
-
-                new_symbols.append(
-                    merged_symbol
-                )
-
-                # Skip both symbols
-
-                i += 2
-
-            else:
-
-                new_symbols.append(
-                    symbols[i]
-                )
-
-                i += 1
-
-        new_vocabulary[
-            tuple(new_symbols)
-        ] = frequency
-
-    return new_vocabulary
-
-
-# =================================================
-# 7. Train BPE
-# =================================================
-
-def train_bpe(
-    vocabulary,
-    num_merges
-):
-
-    merges = []
+def fixed_learning_rate_example():
 
     print()
     print("=" * 60)
-    print("BPE TRAINING")
+    print("1. FIXED LEARNING RATE")
     print("=" * 60)
 
-    for merge_number in range(
-        num_merges
-    ):
+    model = SimpleModel()
 
-        # -----------------------------------------
-        # Count all adjacent pairs
-        # -----------------------------------------
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=LEARNING_RATE
+    )
 
-        pair_frequencies = (
-            get_pair_frequencies(
-                vocabulary
-            )
+    for epoch in range(1, 11):
+
+        lr = get_learning_rate(
+            optimizer
         )
-
-        # -----------------------------------------
-        # No more pairs
-        # -----------------------------------------
-
-        if not pair_frequencies:
-
-            break
-
-        # -----------------------------------------
-        # Find most frequent pair
-        # -----------------------------------------
-
-        best_pair = find_best_pair(
-            pair_frequencies
-        )
-
-        frequency = (
-            pair_frequencies[
-                best_pair
-            ]
-        )
-
-        # -----------------------------------------
-        # Save merge rule
-        # -----------------------------------------
-
-        merges.append(
-            best_pair
-        )
-
-        # -----------------------------------------
-        # Apply merge
-        # -----------------------------------------
-
-        vocabulary = merge_pair(
-            best_pair,
-            vocabulary
-        )
-
-        # -----------------------------------------
-        # Display progress
-        # -----------------------------------------
 
         print(
-            f"Merge {merge_number + 1:3d}: "
-            f"{best_pair} "
-            f"frequency={frequency}"
+            f"Epoch {epoch:2d} "
+            f"LR = {lr:.8f}"
         )
 
-    return (
-        vocabulary,
-        merges
+
+# =========================================================
+# 2. StepLR
+# =========================================================
+
+def step_lr_example():
+
+    print()
+    print("=" * 60)
+    print("2. STEP LR")
+    print("=" * 60)
+
+    model = SimpleModel()
+
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=LEARNING_RATE
     )
 
+    # -----------------------------------------------------
+    # Every 3 epochs:
+    #
+    # LR = LR * 0.5
+    # -----------------------------------------------------
 
-# =================================================
-# 8. Build Token Vocabulary
-# =================================================
-
-def build_token_vocabulary(
-    vocabulary
-):
-
-    tokens = set()
-
-    # -------------------------------------------------
-    # Collect every learned token
-    # -------------------------------------------------
-
-    for symbols in vocabulary:
-
-        for symbol in symbols:
-
-            tokens.add(symbol)
-
-    # -------------------------------------------------
-    # Special tokens first
-    # -------------------------------------------------
-
-    token_to_id = {}
-
-    id_to_token = {}
-
-    current_id = 0
-
-    for token in SPECIAL_TOKENS:
-
-        token_to_id[token] = current_id
-
-        id_to_token[current_id] = token
-
-        current_id += 1
-
-    # -------------------------------------------------
-    # Add BPE tokens
-    # -------------------------------------------------
-
-    for token in sorted(tokens):
-
-        if token not in token_to_id:
-
-            token_to_id[token] = current_id
-
-            id_to_token[current_id] = token
-
-            current_id += 1
-
-    return (
-        token_to_id,
-        id_to_token
+    scheduler = torch.optim.lr_scheduler.StepLR(
+        optimizer,
+        step_size=3,
+        gamma=0.5
     )
 
+    for epoch in range(1, 11):
 
-# =================================================
-# Apply Learned BPE Merges to One Word
-# =================================================
-
-def apply_bpe_to_word(
-    word,
-    merges
-):
-
-    # -------------------------------------------------
-    # Start from characters
-    # -------------------------------------------------
-
-    symbols = (
-        list(word)
-        + [END_OF_WORD]
-    )
-
-    # -------------------------------------------------
-    # Apply merges in learned order
-    # -------------------------------------------------
-
-    for first, second in merges:
-
-        new_symbols = []
-
-        i = 0
-
-        while i < len(symbols):
-
-            if (
-                i < len(symbols) - 1
-                and symbols[i] == first
-                and symbols[i + 1] == second
-            ):
-
-                new_symbols.append(
-                    first + second
-                )
-
-                i += 2
-
-            else:
-
-                new_symbols.append(
-                    symbols[i]
-                )
-
-                i += 1
-
-        symbols = new_symbols
-
-    return symbols
-
-
-# =================================================
-# 9. Tokenize
-# =================================================
-
-def tokenize(
-    text,
-    merges
-):
-
-    text = clean_text(text)
-
-    words = text.split()
-
-    tokens = []
-
-    for word in words:
-
-        word_tokens = (
-            apply_bpe_to_word(
-                word,
-                merges
-            )
+        lr = get_learning_rate(
+            optimizer
         )
 
-        tokens.extend(
-            word_tokens
+        print(
+            f"Epoch {epoch:2d} "
+            f"LR = {lr:.8f}"
         )
 
-    return tokens
+        # Normally called after optimizer.step()
+        scheduler.step()
 
 
-# =================================================
-# 10. Encode
-# =================================================
+# =========================================================
+# 3. ExponentialLR
+# =========================================================
 
-def encode(
-    text,
-    merges,
-    token_to_id,
-    add_special_tokens=True
-):
+def exponential_lr_example():
 
-    tokens = tokenize(
-        text,
-        merges
+    print()
+    print("=" * 60)
+    print("3. EXPONENTIAL LR")
+    print("=" * 60)
+
+    model = SimpleModel()
+
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=LEARNING_RATE
     )
 
-    unk_id = token_to_id[
-        "<UNK>"
+    # -----------------------------------------------------
+    # Each epoch:
+    #
+    # new_lr = old_lr * gamma
+    # -----------------------------------------------------
+
+    scheduler = (
+        torch.optim.lr_scheduler.ExponentialLR(
+            optimizer,
+            gamma=0.9
+        )
+    )
+
+    for epoch in range(1, 11):
+
+        lr = get_learning_rate(
+            optimizer
+        )
+
+        print(
+            f"Epoch {epoch:2d} "
+            f"LR = {lr:.8f}"
+        )
+
+        scheduler.step()
+
+
+# =========================================================
+# 4. Cosine Annealing
+# =========================================================
+
+def cosine_lr_example():
+
+    print()
+    print("=" * 60)
+    print("4. COSINE ANNEALING")
+    print("=" * 60)
+
+    model = SimpleModel()
+
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=LEARNING_RATE
+    )
+
+    scheduler = (
+        torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=10,
+            eta_min=0.00001
+        )
+    )
+
+    for epoch in range(1, 11):
+
+        lr = get_learning_rate(
+            optimizer
+        )
+
+        print(
+            f"Epoch {epoch:2d} "
+            f"LR = {lr:.8f}"
+        )
+
+        scheduler.step()
+
+
+# =========================================================
+# 5. Transformer Learning Rate Formula
+# =========================================================
+
+def transformer_learning_rate(
+    step,
+    d_model,
+    warmup_steps
+):
+    """
+    Original Transformer learning-rate schedule.
+
+    lr = d_model^(-0.5)
+         *
+         min(
+             step^(-0.5),
+             step * warmup_steps^(-1.5)
+         )
+    """
+
+    # step = 0 would cause:
+    #
+    # 0 ** -0.5
+    #
+    # which is invalid.
+
+    step = max(
+        step,
+        1
+    )
+
+    first_term = (
+        step ** -0.5
+    )
+
+    second_term = (
+        step
+        *
+        warmup_steps ** -1.5
+    )
+
+    learning_rate = (
+        d_model ** -0.5
+        *
+        min(
+            first_term,
+            second_term
+        )
+    )
+
+    return learning_rate
+
+
+# =========================================================
+# 6. Explore Transformer Schedule
+# =========================================================
+
+def transformer_schedule_example():
+
+    print()
+    print("=" * 60)
+    print("5. TRANSFORMER LR SCHEDULE")
+    print("=" * 60)
+
+    interesting_steps = [
+        1,
+        10,
+        50,
+        100,
+        200,
+        300,
+        400,
+        500,
+        800,
+        1000,
+        1500,
+        2000
     ]
 
-    token_ids = []
+    print()
 
-    # -------------------------------------------------
-    # BOS
-    # -------------------------------------------------
-
-    if add_special_tokens:
-
-        token_ids.append(
-            token_to_id["<BOS>"]
-        )
-
-    # -------------------------------------------------
-    # BPE tokens
-    # -------------------------------------------------
-
-    for token in tokens:
-
-        token_id = token_to_id.get(
-            token,
-            unk_id
-        )
-
-        token_ids.append(
-            token_id
-        )
-
-    # -------------------------------------------------
-    # EOS
-    # -------------------------------------------------
-
-    if add_special_tokens:
-
-        token_ids.append(
-            token_to_id["<EOS>"]
-        )
-
-    return token_ids
-
-
-# =================================================
-# 11. Decode
-# =================================================
-
-def decode(
-    token_ids,
-    id_to_token
-):
-
-    tokens = []
-
-    # -------------------------------------------------
-    # IDs -> tokens
-    # -------------------------------------------------
-
-    for token_id in token_ids:
-
-        token = id_to_token.get(
-            token_id,
-            "<UNK>"
-        )
-
-        # Ignore special tokens
-
-        if token in {
-            "<PAD>",
-            "<BOS>",
-            "<EOS>"
-        }:
-
-            continue
-
-        tokens.append(token)
-
-    # -------------------------------------------------
-    # Join BPE tokens
-    # -------------------------------------------------
-
-    text = "".join(tokens)
-
-    # -------------------------------------------------
-    # </w> represents a word boundary
-    # -------------------------------------------------
-
-    text = text.replace(
-        END_OF_WORD,
-        " "
+    print(
+        f"d_model      = {EMBEDDING_DIM}"
     )
 
-    return text.strip()
-
-
-# =================================================
-# Display Vocabulary Example
-# =================================================
-
-def display_vocabulary(
-    vocabulary,
-    limit=20
-):
+    print(
+        f"warmup_steps = {WARMUP_STEPS}"
+    )
 
     print()
-    print("=" * 60)
-    print("BPE VOCABULARY EXAMPLES")
-    print("=" * 60)
 
-    for index, (
-        symbols,
-        frequency
-    ) in enumerate(
-        vocabulary.items()
-    ):
+    for step in interesting_steps:
 
-        print(
-            f"{symbols} "
-            f"frequency={frequency}"
+        lr = transformer_learning_rate(
+            step=step,
+            d_model=EMBEDDING_DIM,
+            warmup_steps=WARMUP_STEPS
         )
 
-        if index + 1 >= limit:
-
-            break
-
-
-# =================================================
-# Display Merge Rules
-# =================================================
-
-def display_merges(
-    merges,
-    limit=30
-):
-
-    print()
-    print("=" * 60)
-    print("LEARNED MERGE RULES")
-    print("=" * 60)
-
-    for index, pair in enumerate(
-        merges[:limit]
-    ):
+        phase = (
+            "WARMUP"
+            if step <= WARMUP_STEPS
+            else "DECAY"
+        )
 
         print(
-            f"{index + 1:3d}: "
-            f"{pair[0]} + {pair[1]} "
-            f"-> {pair[0] + pair[1]}"
+            f"Step {step:4d} | "
+            f"{phase:6s} | "
+            f"LR = {lr:.8f}"
         )
 
 
-# =================================================
+# =========================================================
+# 7. Custom Transformer Scheduler
+# =========================================================
+
+class TransformerLRScheduler:
+    """
+    Learning-rate scheduler used for Transformer training.
+
+    It modifies the learning rate stored inside the
+    optimizer.
+
+    Usage:
+
+        optimizer = Adam(...)
+
+        scheduler = TransformerLRScheduler(
+            optimizer,
+            d_model=128,
+            warmup_steps=400
+        )
+
+        ...
+
+        optimizer.step()
+        scheduler.step()
+    """
+
+    def __init__(
+        self,
+        optimizer,
+        d_model,
+        warmup_steps
+    ):
+
+        if d_model <= 0:
+
+            raise ValueError(
+                "d_model must be positive."
+            )
+
+        if warmup_steps <= 0:
+
+            raise ValueError(
+                "warmup_steps must be positive."
+            )
+
+        self.optimizer = optimizer
+
+        self.d_model = d_model
+
+        self.warmup_steps = warmup_steps
+
+        self.step_number = 0
+
+        self.current_lr = 0.0
+
+
+    # -----------------------------------------------------
+    # Calculate LR
+    # -----------------------------------------------------
+
+    def calculate_lr(
+        self,
+        step=None
+    ):
+
+        if step is None:
+
+            step = self.step_number
+
+        step = max(
+            step,
+            1
+        )
+
+        learning_rate = (
+            self.d_model ** -0.5
+            *
+            min(
+                step ** -0.5,
+
+                step
+                *
+                self.warmup_steps ** -1.5
+            )
+        )
+
+        return learning_rate
+
+
+    # -----------------------------------------------------
+    # Scheduler Step
+    # -----------------------------------------------------
+
+    def step(self):
+
+        self.step_number += 1
+
+        learning_rate = (
+            self.calculate_lr(
+                self.step_number
+            )
+        )
+
+        # Change LR inside every optimizer parameter group
+
+        for param_group in (
+            self.optimizer.param_groups
+        ):
+
+            param_group["lr"] = (
+                learning_rate
+            )
+
+        self.current_lr = learning_rate
+
+        return learning_rate
+
+
+    # -----------------------------------------------------
+    # Get Current LR
+    # -----------------------------------------------------
+
+    def get_last_lr(self):
+
+        return self.current_lr
+
+
+    # -----------------------------------------------------
+    # Save Scheduler State
+    # -----------------------------------------------------
+
+    def state_dict(self):
+
+        return {
+            "step_number":
+                self.step_number,
+
+            "d_model":
+                self.d_model,
+
+            "warmup_steps":
+                self.warmup_steps,
+
+            "current_lr":
+                self.current_lr
+        }
+
+
+    # -----------------------------------------------------
+    # Restore Scheduler State
+    # -----------------------------------------------------
+
+    def load_state_dict(
+        self,
+        state
+    ):
+
+        self.step_number = (
+            state["step_number"]
+        )
+
+        self.d_model = (
+            state["d_model"]
+        )
+
+        self.warmup_steps = (
+            state["warmup_steps"]
+        )
+
+        self.current_lr = (
+            state["current_lr"]
+        )
+
+        # Restore LR into optimizer
+
+        for param_group in (
+            self.optimizer.param_groups
+        ):
+
+            param_group["lr"] = (
+                self.current_lr
+            )
+
+
+# =========================================================
+# 8. Test Custom Scheduler
+# =========================================================
+
+def test_custom_scheduler():
+
+    print()
+    print("=" * 60)
+    print("6. CUSTOM TRANSFORMER SCHEDULER")
+    print("=" * 60)
+
+    model = SimpleModel()
+
+    # -----------------------------------------------------
+    # The scheduler will control the LR.
+    # -----------------------------------------------------
+
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=0.0
+    )
+
+    scheduler = TransformerLRScheduler(
+        optimizer=optimizer,
+        d_model=EMBEDDING_DIM,
+        warmup_steps=WARMUP_STEPS
+    )
+
+    for step in range(
+        1,
+        TOTAL_STEPS + 1
+    ):
+
+        lr = scheduler.step()
+
+        if (
+            step <= 10
+            or step % 100 == 0
+        ):
+
+            phase = (
+                "WARMUP"
+                if step <= WARMUP_STEPS
+                else "DECAY"
+            )
+
+            print(
+                f"Step {step:4d} | "
+                f"{phase:6s} | "
+                f"LR = {lr:.8f}"
+            )
+
+
+# =========================================================
+# 9. Real Training Example
+# =========================================================
+
+def training_example():
+
+    print()
+    print("=" * 60)
+    print("7. TRAINING EXAMPLE")
+    print("=" * 60)
+
+    # -----------------------------------------------------
+    # Model
+    # -----------------------------------------------------
+
+    model = SimpleModel().to(
+        device
+    )
+
+    # -----------------------------------------------------
+    # Optimizer
+    # -----------------------------------------------------
+
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=0.0
+    )
+
+    # -----------------------------------------------------
+    # Scheduler
+    # -----------------------------------------------------
+
+    scheduler = TransformerLRScheduler(
+        optimizer=optimizer,
+        d_model=EMBEDDING_DIM,
+        warmup_steps=20
+    )
+
+    # -----------------------------------------------------
+    # Loss
+    # -----------------------------------------------------
+
+    criterion = nn.CrossEntropyLoss()
+
+    # -----------------------------------------------------
+    # Training
+    # -----------------------------------------------------
+
+    epochs = 5
+
+    batches_per_epoch = 10
+
+    global_step = 0
+
+    for epoch in range(
+        1,
+        epochs + 1
+    ):
+
+        total_loss = 0.0
+
+        for batch in range(
+            batches_per_epoch
+        ):
+
+            # ---------------------------------------------
+            # Fake training data
+            # ---------------------------------------------
+
+            inputs = torch.randn(
+                8,
+                10,
+                device=device
+            )
+
+            targets = torch.randint(
+                low=0,
+                high=5,
+                size=(8,),
+                device=device
+            )
+
+            # ---------------------------------------------
+            # Reset gradients
+            # ---------------------------------------------
+
+            optimizer.zero_grad()
+
+            # ---------------------------------------------
+            # Forward
+            # ---------------------------------------------
+
+            logits = model(
+                inputs
+            )
+
+            # ---------------------------------------------
+            # Loss
+            # ---------------------------------------------
+
+            loss = criterion(
+                logits,
+                targets
+            )
+
+            # ---------------------------------------------
+            # Backpropagation
+            # ---------------------------------------------
+
+            loss.backward()
+
+            # ---------------------------------------------
+            # Update parameters
+            # ---------------------------------------------
+
+            optimizer.step()
+
+            # ---------------------------------------------
+            # Update LR
+            # ---------------------------------------------
+
+            current_lr = (
+                scheduler.step()
+            )
+
+            global_step += 1
+
+            total_loss += (
+                loss.item()
+            )
+
+        average_loss = (
+            total_loss
+            /
+            batches_per_epoch
+        )
+
+        print(
+            f"Epoch {epoch:2d} | "
+            f"Step {global_step:3d} | "
+            f"Loss = {average_loss:.4f} | "
+            f"LR = {current_lr:.8f}"
+        )
+
+
+# =========================================================
+# 10. Transformer Training Integration
+# =========================================================
+
+def transformer_integration_example():
+
+    print()
+    print("=" * 60)
+    print("8. LAB 19 INTEGRATION")
+    print("=" * 60)
+
+    print(
+        """
+In Lab 19 you had:
+
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=LEARNING_RATE
+    )
+
+
+Instead use:
+
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=0.0
+    )
+
+    scheduler = TransformerLRScheduler(
+        optimizer=optimizer,
+        d_model=EMBEDDING_DIM,
+        warmup_steps=4000
+    )
+
+
+Then inside the training loop:
+
+    for epoch in range(EPOCHS):
+
+        for (
+            (inputs_en, targets_en),
+            (inputs_fr, targets_fr)
+
+        ) in zip(
+            dataloader_en,
+            dataloader_fr
+        ):
+
+            inputs_en = inputs_en.to(device)
+            inputs_fr = inputs_fr.to(device)
+            targets_fr = targets_fr.to(device)
+
+            # -------------------------------
+            # Reset gradients
+            # -------------------------------
+
+            optimizer.zero_grad()
+
+            # -------------------------------
+            # Forward
+            # -------------------------------
+
+            logits, _, _, _ = model(
+                inputs_en,
+                inputs_fr
+            )
+
+            # -------------------------------
+            # Flatten
+            # -------------------------------
+
+            logits = logits.reshape(
+                -1,
+                logits.size(-1)
+            )
+
+            targets = targets_fr.reshape(
+                -1
+            )
+
+            # -------------------------------
+            # Loss
+            # -------------------------------
+
+            loss = criterion(
+                logits,
+                targets
+            )
+
+            # -------------------------------
+            # Backward
+            # -------------------------------
+
+            loss.backward()
+
+            # -------------------------------
+            # Update model
+            # -------------------------------
+
+            optimizer.step()
+
+            # -------------------------------
+            # Update learning rate
+            # -------------------------------
+
+            current_lr = scheduler.step()
+"""
+    )
+
+
+# =========================================================
+# 11. Save / Load Scheduler
+# =========================================================
+
+def checkpoint_example():
+
+    print()
+    print("=" * 60)
+    print("9. CHECKPOINT EXAMPLE")
+    print("=" * 60)
+
+    print(
+        """
+When saving your Transformer:
+
+    torch.save(
+        {
+            "model_state_dict":
+                model.state_dict(),
+
+            "optimizer_state_dict":
+                optimizer.state_dict(),
+
+            "scheduler_state_dict":
+                scheduler.state_dict(),
+
+            "epoch":
+                epoch
+        },
+
+        "models/transformer.pth"
+    )
+
+
+When loading:
+
+    checkpoint = torch.load(
+        "models/transformer.pth"
+    )
+
+    model.load_state_dict(
+        checkpoint["model_state_dict"]
+    )
+
+    optimizer.load_state_dict(
+        checkpoint["optimizer_state_dict"]
+    )
+
+    scheduler.load_state_dict(
+        checkpoint["scheduler_state_dict"]
+    )
+"""
+    )
+
+
+# =========================================================
 # 12. Main
-# =================================================
+# =========================================================
 
 def main():
 
     print("=" * 60)
-    print("LAB 24 - BPE TOKENIZER")
+    print("LAB 26 - LEARNING RATE SCHEDULING")
     print("=" * 60)
 
-    # -------------------------------------------------
-    # 1. Load Corpus
-    # -------------------------------------------------
-
-    text = load_corpus(
-        DATASET_PATH
-    )
-
-    text = clean_text(
-        text
-    )
-
     print()
-    print("Corpus characters:")
-    print(len(text))
-
-    # -------------------------------------------------
-    # 2. Word Frequencies
-    # -------------------------------------------------
-
-    word_frequency = (
-        build_word_frequency(
-            text
-        )
+    print(
+        "Initial learning rate:",
+        LEARNING_RATE
     )
-
-    print()
-    print("Unique words:")
-    print(len(word_frequency))
-
-    print()
-    print("Most common words:")
-
-    for word, frequency in (
-        word_frequency.most_common(10)
-    ):
-
-        print(
-            f"{word:20} "
-            f"{frequency}"
-        )
-
-    # -------------------------------------------------
-    # 3. Initialize Vocabulary
-    # -------------------------------------------------
-
-    vocabulary = (
-        initialize_vocabulary(
-            word_frequency
-        )
-    )
-
-    print()
-    print("=" * 60)
-    print("INITIAL CHARACTER VOCABULARY")
-    print("=" * 60)
-
-    for index, (
-        symbols,
-        frequency
-    ) in enumerate(
-        vocabulary.items()
-    ):
-
-        print(
-            symbols,
-            "frequency=",
-            frequency
-        )
-
-        if index >= 9:
-            break
-
-    # -------------------------------------------------
-    # 4 -> 7. Train BPE
-    # -------------------------------------------------
-
-    (
-        trained_vocabulary,
-        merges
-
-    ) = train_bpe(
-        vocabulary,
-        NUM_MERGES
-    )
-
-    # -------------------------------------------------
-    # Display learned merges
-    # -------------------------------------------------
-
-    display_merges(
-        merges
-    )
-
-    # -------------------------------------------------
-    # Display vocabulary
-    # -------------------------------------------------
-
-    display_vocabulary(
-        trained_vocabulary
-    )
-
-    # -------------------------------------------------
-    # 8. Build Token Vocabulary
-    # -------------------------------------------------
-
-    (
-        token_to_id,
-        id_to_token
-
-    ) = build_token_vocabulary(
-        trained_vocabulary
-    )
-
-    print()
-    print("=" * 60)
-    print("TOKEN VOCABULARY")
-    print("=" * 60)
 
     print(
-        "Vocabulary size:",
-        len(token_to_id)
+        "Embedding dimension:",
+        EMBEDDING_DIM
     )
 
-    print()
+    print(
+        "Warmup steps:",
+        WARMUP_STEPS
+    )
 
-    print("Special tokens:")
+    # -----------------------------------------------------
+    # Fixed LR
+    # -----------------------------------------------------
 
-    for token in SPECIAL_TOKENS:
+    fixed_learning_rate_example()
 
-        print(
-            f"{token:8} -> "
-            f"{token_to_id[token]}"
-        )
+    # -----------------------------------------------------
+    # PyTorch schedulers
+    # -----------------------------------------------------
 
-    # -------------------------------------------------
-    # Test Tokenizer
-    # -------------------------------------------------
+    step_lr_example()
+
+    exponential_lr_example()
+
+    cosine_lr_example()
+
+    # -----------------------------------------------------
+    # Transformer schedule
+    # -----------------------------------------------------
+
+    transformer_schedule_example()
+
+    # -----------------------------------------------------
+    # Custom scheduler
+    # -----------------------------------------------------
+
+    test_custom_scheduler()
+
+    # -----------------------------------------------------
+    # Training
+    # -----------------------------------------------------
+
+    training_example()
+
+    # -----------------------------------------------------
+    # Integration explanation
+    # -----------------------------------------------------
+
+    transformer_integration_example()
+
+    # -----------------------------------------------------
+    # Checkpoint
+    # -----------------------------------------------------
+
+    checkpoint_example()
 
     print()
     print("=" * 60)
-    print("TOKENIZER TEST")
-    print("=" * 60)
-
-    sentence = input(
-        "\nEnter a sentence: "
-    )
-
-    # -------------------------------------------------
-    # 9. Tokenize
-    # -------------------------------------------------
-
-    tokens = tokenize(
-        sentence,
-        merges
-    )
-
-    print()
-    print("BPE Tokens:")
-
-    print(tokens)
-
-    # -------------------------------------------------
-    # 10. Encode
-    # -------------------------------------------------
-
-    token_ids = encode(
-        sentence,
-        merges,
-        token_to_id
-    )
-
-    print()
-    print("Token IDs:")
-
-    print(token_ids)
-
-    # -------------------------------------------------
-    # Display Token -> ID
-    # -------------------------------------------------
-
-    print()
-    print("Token / ID:")
-
-    for token_id in token_ids:
-
-        print(
-            f"{token_id:4d} "
-            f"-> "
-            f"{id_to_token[token_id]}"
-        )
-
-    # -------------------------------------------------
-    # 11. Decode
-    # -------------------------------------------------
-
-    decoded_text = decode(
-        token_ids,
-        id_to_token
-    )
-
-    print()
-    print("Decoded:")
-
-    print(decoded_text)
-
-    print()
-    print("=" * 60)
-    print("LAB 24 FINISHED")
+    print("LAB 26 FINISHED")
     print("=" * 60)
 
 
